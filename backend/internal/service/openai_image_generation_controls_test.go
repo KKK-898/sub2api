@@ -175,6 +175,25 @@ func TestOpenAIGatewayServiceForward_BoliShengtuStripsImageToolForAPIKeyAccount(
 	require.Equal(t, 0, result.ImageCount)
 }
 
+func TestOpenAIGatewayServiceForward_BoliShengtuDoesNotBypassDisabledGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, recorder := newOpenAIImageGenerationControlTestContext(false, "unit-test-agent/1.0")
+	account := newOpenAIImageGenerationControlTestAccount()
+	account.Extra = map[string]any{"boli_shengtu": true}
+	body := []byte(`{"model":"gpt-5.4","input":"draw","stream":false,"tools":[{"type":"image_generation"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Equal(t, "permission_error", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
+	require.Nil(t, upstream.lastReq)
+}
+
 func TestOpenAIBoliShengtuOnlyAppliesToOpenAIAPIKeyAccounts(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","input":"ping","tool_choice":{"type":"image_generation"},"tools":[{"type":"image_generation"}]}`)
 

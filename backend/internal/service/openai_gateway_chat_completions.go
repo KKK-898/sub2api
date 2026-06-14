@@ -61,6 +61,12 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	if IsImageGenerationIntent("/v1/chat/completions", gjson.GetBytes(body, "model").String(), body) && !GroupAllowsImageGeneration(apiKeyGroup(getAPIKeyFromContext(c))) {
+		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
+		writeChatCompletionsError(c, http.StatusForbidden, "permission_error", ImageGenerationPermissionMessage())
+		return nil, errors.New("image generation disabled for group")
+	}
+
 	if strippedBody, stripped, err := stripOpenAIImageGenerationToolsForAccount(account, body); err != nil {
 		return nil, fmt.Errorf("apply boli_shengtu: %w", err)
 	} else if stripped {
