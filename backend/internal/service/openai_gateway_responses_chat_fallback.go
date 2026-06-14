@@ -29,6 +29,13 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 
+	if strippedBody, stripped, err := stripOpenAIImageGenerationToolsForAccount(account, body); err != nil {
+		return nil, fmt.Errorf("apply boli_shengtu: %w", err)
+	} else if stripped {
+		body = strippedBody
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped responses fallback image_generation tools by boli_shengtu (account: %s, id: %d)", account.Name, account.ID)
+	}
+
 	var responsesReq apicompat.ResponsesRequest
 	if err := json.Unmarshal(body, &responsesReq); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{

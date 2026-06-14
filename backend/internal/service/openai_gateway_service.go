@@ -2385,6 +2385,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("codex_cli_only restriction: only codex official clients are allowed")
 	}
 
+	if strippedBody, stripped, err := stripOpenAIImageGenerationToolsForAccount(account, body); err != nil {
+		return nil, fmt.Errorf("apply boli_shengtu: %w", err)
+	} else if stripped {
+		body = strippedBody
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped image_generation tools by boli_shengtu (account: %s, id: %d)", account.Name, account.ID)
+	}
+
 	originalBody := body
 	requestView := newOpenAIRequestView(body)
 	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey

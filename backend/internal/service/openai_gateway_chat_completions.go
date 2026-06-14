@@ -61,6 +61,13 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	if strippedBody, stripped, err := stripOpenAIImageGenerationToolsForAccount(account, body); err != nil {
+		return nil, fmt.Errorf("apply boli_shengtu: %w", err)
+	} else if stripped {
+		body = strippedBody
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped chat_completions image_generation tools by boli_shengtu (account: %s, id: %d)", account.Name, account.ID)
+	}
+
 	// 入口分流：APIKey 账号 + 强制或已探测确认上游不支持 Responses，走 CC 直转。
 	// 自动模式下标记缺失（未探测）按"现状即证据"原则继续走下方原 Responses 转换路径。
 	if account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {

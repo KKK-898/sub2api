@@ -602,6 +602,62 @@ func hasOpenAIImageGenerationTool(reqBody map[string]any) bool {
 	return false
 }
 
+func stripOpenAIImageGenerationToolsForAccount(account *Account, body []byte) ([]byte, bool, error) {
+	if account == nil || !account.IsOpenAIBoliShengtuEnabled() || len(body) == 0 || !json.Valid(body) {
+		return body, false, nil
+	}
+
+	reqBody := make(map[string]any)
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return body, false, nil
+	}
+	if !stripOpenAIImageGenerationTools(reqBody) {
+		return body, false, nil
+	}
+
+	rebuilt, err := marshalOpenAIUpstreamJSON(reqBody)
+	if err != nil {
+		return nil, false, err
+	}
+	return rebuilt, true, nil
+}
+
+func stripOpenAIImageGenerationTools(reqBody map[string]any) bool {
+	if len(reqBody) == 0 {
+		return false
+	}
+
+	modified := false
+	if rawTools, ok := reqBody["tools"]; ok && rawTools != nil {
+		if tools, ok := rawTools.([]any); ok {
+			kept := make([]any, 0, len(tools))
+			removed := false
+			for _, rawTool := range tools {
+				toolMap, ok := rawTool.(map[string]any)
+				if ok && strings.TrimSpace(firstNonEmptyString(toolMap["type"])) == "image_generation" {
+					removed = true
+					continue
+				}
+				kept = append(kept, rawTool)
+			}
+			if removed {
+				modified = true
+				if len(kept) == 0 {
+					delete(reqBody, "tools")
+				} else {
+					reqBody["tools"] = kept
+				}
+			}
+		}
+	}
+
+	if openAIAnyToolChoiceSelectsImageGeneration(reqBody["tool_choice"]) {
+		delete(reqBody, "tool_choice")
+		modified = true
+	}
+	return modified
+}
+
 func hasOpenAIInputImage(reqBody map[string]any) bool {
 	if reqBody == nil {
 		return false
