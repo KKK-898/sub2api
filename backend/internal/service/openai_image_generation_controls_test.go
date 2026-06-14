@@ -147,6 +147,75 @@ func TestOpenAIGatewayServiceForward_ExplicitImageToolWorksWithBridgeDisabled(t 
 	require.NotContains(t, instructions, "image_generation")
 }
 
+func TestOpenAIGatewayServiceForward_BoliShengtuStripsImageToolForAPIKeyAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_boli_shengtu","model":"gpt-5.4","usage":{"input_tokens":2,"output_tokens":1}}`)),
+		},
+	}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, recorder := newOpenAIImageGenerationControlTestContext(true, "unit-test-agent/1.0")
+	account := newOpenAIImageGenerationControlTestAccount()
+	account.Extra = map[string]any{"boli_shengtu": true}
+	body := []byte(`{"model":"gpt-5.4","input":"ping","stream":false,"tool_choice":{"type":"image_generation"},"tools":[{"type":"image_generation","format":"jpeg"},{"type":"function","name":"noop_tool","description":"No-op","parameters":{"type":"object","properties":{},"additionalProperties":false},"strict":true}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotNil(t, upstream.lastReq)
+	require.False(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="image_generation")`).Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "tool_choice").Exists())
+	require.True(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="function")`).Exists())
+	require.Equal(t, 0, result.ImageCount)
+}
+
+func TestOpenAIBoliShengtuOnlyAppliesToOpenAIAPIKeyAccounts(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","input":"ping","tool_choice":{"type":"image_generation"},"tools":[{"type":"image_generation"}]}`)
+
+	tests := []struct {
+		name    string
+		account *Account
+		want    bool
+	}{
+		{
+			name:    "openai apikey enabled",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"boli_shengtu": true}},
+			want:    true,
+		},
+		{
+			name:    "openai oauth ignored",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{"boli_shengtu": true}},
+			want:    false,
+		},
+		{
+			name:    "anthropic apikey ignored",
+			account: &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Extra: map[string]any{"boli_shengtu": true}},
+			want:    false,
+		},
+		{
+			name:    "openai apikey disabled",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"boli_shengtu": false}},
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotBody, got, err := stripOpenAIImageGenerationToolsForAccount(tt.account, body)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, !gjson.GetBytes(gotBody, `tools.#(type=="image_generation")`).Exists())
+		})
+	}
+}
+
 func TestOpenAIGatewayServiceForward_ChannelBridgeOverrideEnablesCodexInjection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

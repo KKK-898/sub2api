@@ -66,6 +66,13 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 
+	if strippedBody, stripped, err := stripOpenAIImageGenerationToolsForAccount(account, body); err != nil {
+		return nil, fmt.Errorf("apply boli_shengtu: %w", err)
+	} else if stripped {
+		body = strippedBody
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped raw chat_completions image_generation tools by boli_shengtu (account: %s, id: %d)", account.Name, account.ID)
+	}
+
 	// 1. Parse minimal fields needed for routing/billing
 	originalModel := gjson.GetBytes(body, "model").String()
 	if originalModel == "" {

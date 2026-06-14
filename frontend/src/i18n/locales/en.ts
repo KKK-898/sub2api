@@ -3405,6 +3405,9 @@ export default {
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
+        boliShengtu: 'Strip image-generation requests',
+        boliShengtuDesc:
+          'Only applies to OpenAI API Key accounts. When this account is selected, remove image_generation tools and matching tool_choice from text requests before forwarding upstream.',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           'Disabled by default. Enable to allow responses_websockets_v2 capability (still gated by global and account-type switches).',

@@ -1312,6 +1312,16 @@ func (a *Account) IsOpenAIPassthroughEnabled() bool {
 // 优先级：
 // 1. 按账号类型读取分类型字段
 // 2. 分类型字段缺失时，回退兼容字段
+// IsOpenAIBoliShengtuEnabled returns whether this OpenAI API Key account should
+// strip image_generation tools before forwarding text requests upstream.
+func (a *Account) IsOpenAIBoliShengtuEnabled() bool {
+	if a == nil || !a.IsOpenAIApiKey() || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["boli_shengtu"].(bool)
+	return ok && enabled
+}
+
 func (a *Account) IsOpenAIResponsesWebSocketV2Enabled() bool {
 	if a == nil || !a.IsOpenAI() || a.Extra == nil {
 		return false
