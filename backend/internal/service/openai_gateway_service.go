@@ -2385,6 +2385,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("codex_cli_only restriction: only codex official clients are allowed")
 	}
 
+	{
+		apiKey := getAPIKeyFromContext(c)
+		requestView := newOpenAIRequestView(body)
+		if IsImageGenerationIntent(openAIResponsesEndpoint, requestView.Model, body) && !GroupAllowsImageGeneration(apiKeyGroup(apiKey)) {
+			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "permission_error", "message": ImageGenerationPermissionMessage()}})
+			return nil, errors.New("image generation disabled for group")
+		}
+	}
+
 	if strippedBody, stripped, err := stripOpenAIImageGenerationToolsForAccount(account, body); err != nil {
 		return nil, fmt.Errorf("apply boli_shengtu: %w", err)
 	} else if stripped {
