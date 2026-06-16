@@ -24,6 +24,9 @@
         class="btn btn-primary w-full py-3">
         {{ t('payment.qr.openPayWindow') }}
       </a>
+      <button v-if="!expired && orderId" class="btn btn-secondary w-full" :disabled="verifying" @click="refreshStatus">
+        {{ verifying ? '刷新中...' : '刷新状态' }}
+      </button>
       <!-- Cancel button -->
       <button v-if="!expired && orderId" class="btn btn-secondary w-full" :disabled="cancelling" @click="handleCancel">
         {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
@@ -58,7 +61,9 @@ const orderId = ref(0)
 const remainingSeconds = ref(0)
 const expired = ref(false)
 const cancelling = ref(false)
+const verifying = ref(false)
 const paymentType = ref('')
+const outTradeNo = ref('')
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -135,12 +140,37 @@ async function pollStatus() {
   if (!orderId.value) return
   const order = await paymentStore.pollOrderStatus(orderId.value)
   if (!order) return
-  if (order.status === 'COMPLETED' || order.status === 'PAID') {
+  if (order.status === 'COMPLETED') {
     cleanup()
     router.push({ path: '/payment/result', query: { order_id: String(orderId.value), status: 'success' } })
   } else if (order.status === 'EXPIRED' || order.status === 'CANCELLED' || order.status === 'FAILED') {
     cleanup()
     expired.value = true
+  }
+}
+
+async function refreshStatus() {
+  if (!orderId.value || verifying.value) return
+  verifying.value = true
+  try {
+    const orderNo = outTradeNo.value.trim()
+    const order = orderNo
+      ? (await paymentAPI.verifyOrder(orderNo)).data
+      : await paymentStore.pollOrderStatus(orderId.value)
+    if (!order) return
+    if (order.status === 'COMPLETED') {
+      cleanup()
+      router.push({ path: '/payment/result', query: { order_id: String(orderId.value), status: 'success' } })
+    } else if (order.status === 'PAID' || order.status === 'RECHARGING') {
+      appStore.showInfo(t('payment.result.processing'))
+    } else if (order.status === 'EXPIRED' || order.status === 'CANCELLED' || order.status === 'FAILED') {
+      cleanup()
+      expired.value = true
+    }
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    verifying.value = false
   }
 }
 
@@ -168,6 +198,8 @@ async function handleCancel() {
     router.push('/purchase')
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+    cleanup()
+    router.push('/purchase')
   } finally {
     cancelling.value = false
   }
@@ -185,6 +217,7 @@ onMounted(() => {
   qrUrl.value = String(route.query.qr || '')
   payUrl.value = String(route.query.pay_url || '')
   paymentType.value = String(route.query.payment_type || '')
+  outTradeNo.value = String(route.query.out_trade_no || '')
 
   // Calculate countdown from expiresAt
   const expiresAtStr = String(route.query.expires_at || '')

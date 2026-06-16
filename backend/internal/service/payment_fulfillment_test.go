@@ -266,6 +266,30 @@ func TestExpectedNotificationProviderKeyForOrderUsesSnapshotProviderKey(t *testi
 	)
 }
 
+func TestExpectedProviderPaidAmountRecomputesLegacyFeePayAmount(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		Amount:    5,
+		PayAmount: 5,
+		FeeRate:   0.5,
+	}
+
+	assert.InDelta(t, 5.03, expectedProviderPaidAmount(order), 0.000001)
+}
+
+func TestExpectedProviderPaidAmountKeepsCurrentPayAmount(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		Amount:    5,
+		PayAmount: 5.03,
+		FeeRate:   0.5,
+	}
+
+	assert.InDelta(t, 5.03, expectedProviderPaidAmount(order), 0.000001)
+}
+
 func TestValidateProviderNotificationMetadataRejectsWxpaySnapshotMismatch(t *testing.T) {
 	t.Parallel()
 

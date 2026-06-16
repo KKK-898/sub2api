@@ -101,11 +101,29 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		})
 		return fmt.Errorf("invalid paid amount from provider: %v", paid)
 	}
-	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
-		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
-		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
+	expectedPayAmount := expectedProviderPaidAmount(o)
+	if math.Abs(paid-expectedPayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": expectedPayAmount, "storedPayAmount": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
+		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(expectedPayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
 	}
 	return s.toPaid(ctx, o, tradeNo, paid, pk)
+}
+
+func expectedProviderPaidAmount(order *dbent.PaymentOrder) float64 {
+	if order == nil {
+		return 0
+	}
+	if order.FeeRate > 0 && order.Amount > 0 {
+		currency := PaymentOrderCurrency(order)
+		if formatted := payment.CalculatePayAmountForCurrency(order.Amount, order.FeeRate, currency); formatted != "" {
+			if recomputed, err := strconv.ParseFloat(formatted, 64); err == nil && recomputed > 0 {
+				if order.PayAmount <= 0 || math.Abs(order.PayAmount-order.Amount) <= paymentAmountToleranceForCurrency(currency) {
+					return recomputed
+				}
+			}
+		}
+	}
+	return order.PayAmount
 }
 
 func paymentAmountToleranceForCurrency(currency string) float64 {
@@ -148,6 +166,7 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 		paymentorder.Or(
 			paymentorder.StatusEQ(OrderStatusPending),
 			paymentorder.StatusEQ(OrderStatusCancelled),
+			paymentorder.StatusEQ(OrderStatusFailed),
 			paymentorder.And(
 				paymentorder.StatusEQ(OrderStatusExpired),
 				paymentorder.UpdatedAtGTE(grace),
