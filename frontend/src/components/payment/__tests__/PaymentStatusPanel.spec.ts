@@ -73,7 +73,7 @@ describe('PaymentStatusPanel', () => {
     vi.useRealTimers()
   })
 
-  it('treats RECHARGING as a successful terminal state', async () => {
+  it('keeps RECHARGING in processing state until fulfillment completes', async () => {
     pollOrderStatus.mockResolvedValue(orderFactory('RECHARGING'))
 
     const wrapper = mount(PaymentStatusPanel, {
@@ -96,8 +96,8 @@ describe('PaymentStatusPanel', () => {
     await flushPromises()
 
     expect(pollOrderStatus).toHaveBeenCalledWith(42)
-    expect(wrapper.text()).toContain('payment.result.success')
-    expect(wrapper.emitted('success')).toHaveLength(1)
+    expect(wrapper.text()).toContain('payment.result.processing')
+    expect(wrapper.emitted('success')).toBeUndefined()
   })
 
   it('shows reopen button in QR mode when payUrl is also available', async () => {

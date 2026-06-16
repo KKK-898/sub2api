@@ -35,6 +35,19 @@
       </div>
     </template>
 
+    <template v-else-if="isProcessingPaid">
+      <div class="card p-6">
+        <div class="flex flex-col items-center space-y-4 py-4">
+          <div class="h-10 w-10 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+          <p class="text-lg font-bold text-gray-900 dark:text-white">{{ processingTitle }}</p>
+          <p class="text-center text-sm text-gray-500 dark:text-gray-400">{{ processingHint }}</p>
+          <button class="btn btn-secondary" :disabled="verifying" @click="refreshStatus">
+            {{ verifying ? refreshInProgressLabel : refreshStatusLabel }}
+          </button>
+        </div>
+      </div>
+    </template>
+
     <!-- Cancelled -->
     <template v-else-if="outcome === 'cancelled'">
       <div class="card p-6">
@@ -94,9 +107,14 @@
         <p class="mt-1 text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{{ countdownDisplay }}</p>
         <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">{{ t('payment.qr.waitingPayment') }}</p>
       </div>
-      <button class="btn btn-secondary w-full" :disabled="cancelling" @click="handleCancel">
-        {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
-      </button>
+      <div class="grid grid-cols-2 gap-3">
+        <button class="btn btn-secondary w-full" :disabled="verifying" @click="refreshStatus">
+          {{ verifying ? refreshInProgressLabel : refreshStatusLabel }}
+        </button>
+        <button class="btn btn-secondary w-full" :disabled="cancelling" @click="handleCancel">
+          {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
+        </button>
+      </div>
     </template>
 
     <!-- Waiting for Popup/Redirect Mode -->
@@ -114,9 +132,14 @@
         <p class="mt-1 text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{{ countdownDisplay }}</p>
         <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">{{ t('payment.qr.waitingPayment') }}</p>
       </div>
-      <button class="btn btn-secondary w-full" :disabled="cancelling" @click="handleCancel">
-        {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
-      </button>
+      <div class="grid grid-cols-2 gap-3">
+        <button class="btn btn-secondary w-full" :disabled="verifying" @click="refreshStatus">
+          {{ verifying ? refreshInProgressLabel : refreshStatusLabel }}
+        </button>
+        <button class="btn btn-secondary w-full" :disabled="cancelling" @click="handleCancel">
+          {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
+        </button>
+      </div>
     </template>
   </div>
 </template>
@@ -142,6 +165,7 @@ const props = defineProps<{
   expiresAt: string
   paymentType: string
   payUrl?: string
+  outTradeNo?: string
   orderType?: string
   currency?: string
 }>()
@@ -159,7 +183,9 @@ const qrCanvas = ref<HTMLCanvasElement | null>(null)
 const qrUrl = ref('')
 const remainingSeconds = ref(0)
 const cancelling = ref(false)
+const verifying = ref(false)
 const paidOrder = ref<PaymentOrder | null>(null)
+const processingOrder = ref<PaymentOrder | null>(null)
 const paymentCurrency = computed(() => normalizePaymentCurrency(props.currency))
 const localeCode = computed(() => {
   const raw = i18n.locale as unknown
@@ -180,6 +206,10 @@ let lastVerifyAt = 0
 
 const VERIFY_RETRY_INTERVAL_MS = 15000
 const VERIFY_RETRY_MAX_ATTEMPTS = 6
+const refreshStatusLabel = '刷新状态'
+const refreshInProgressLabel = '刷新中...'
+const subscriptionProcessingTitle = '支付已完成，正在开通订阅'
+const subscriptionProcessingHint = '系统正在写入订阅记录，请稍候刷新状态。'
 
 const isAlipay = computed(() => props.paymentType.includes('alipay'))
 const isWxpay = computed(() => props.paymentType.includes('wxpay'))
@@ -218,8 +248,19 @@ function formatGatewayAmount(value: number): string {
   return formatPaymentAmount(value, paymentCurrency.value, localeCode.value)
 }
 
+const isProcessingPaid = computed(() => {
+  const status = processingOrder.value?.status
+  return !outcome.value && (status === 'PAID' || status === 'RECHARGING')
+})
+const processingTitle = computed(() => props.orderType === 'subscription' ? subscriptionProcessingTitle : t('payment.result.processing'))
+const processingHint = computed(() => props.orderType === 'subscription' ? subscriptionProcessingHint : t('payment.result.processingHint'))
+
 function isSuccessStatus(status: string | null | undefined): boolean {
-  return status === 'COMPLETED' || status === 'PAID' || status === 'RECHARGING'
+  return status === 'COMPLETED'
+}
+
+function isProcessingStatus(status: string | null | undefined): boolean {
+  return status === 'PAID' || status === 'RECHARGING'
 }
 
 function reopenPopup() {
@@ -272,17 +313,46 @@ async function pollStatus() {
   let order = await paymentStore.pollOrderStatus(props.orderId)
   if (!order) return
   order = await tryRecoverPendingOrder(order)
+  applyOrderStatus(order)
+}
+
+function applyOrderStatus(order: PaymentOrder) {
   if (isSuccessStatus(order.status)) {
     cleanup()
     paidOrder.value = order
     setOutcome('success')
     emit('success')
+  } else if (isProcessingStatus(order.status)) {
+    processingOrder.value = order
   } else if (order.status === 'CANCELLED') {
     cleanup()
     setOutcome('cancelled')
   } else if (order.status === 'EXPIRED' || order.status === 'FAILED') {
     cleanup()
     setOutcome('expired')
+  }
+}
+
+async function refreshStatus() {
+  if (!props.orderId || outcome.value || verifying.value) return
+  verifying.value = true
+  try {
+    let order: PaymentOrder | null = null
+    const outTradeNo = String(props.outTradeNo || processingOrder.value?.out_trade_no || paidOrder.value?.out_trade_no || '').trim()
+    if (outTradeNo) {
+      const result = await paymentAPI.verifyOrder(outTradeNo)
+      order = result.data ?? null
+    }
+    if (!order) {
+      order = await paymentStore.pollOrderStatus(props.orderId)
+    }
+    if (order) {
+      applyOrderStatus(order)
+    }
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    verifying.value = false
   }
 }
 
@@ -304,6 +374,8 @@ async function handleCancel() {
     setOutcome('cancelled')
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+    cleanup()
+    emit('done')
   } finally {
     cancelling.value = false
   }

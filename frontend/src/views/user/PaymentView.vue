@@ -20,6 +20,7 @@
             :expires-at="paymentState.expiresAt"
             :payment-type="paymentState.paymentType"
             :pay-url="paymentState.payUrl"
+            :out-trade-no="paymentState.outTradeNo"
             :order-type="paymentState.orderType"
             :currency="paymentState.currency || selectedCurrency"
             @done="onPaymentDone"
@@ -217,6 +218,27 @@
       </template>
     </div>
     <!-- Renewal Plan Selection Modal -->
+    <BaseDialog
+      :show="showSubscriptionNotice"
+      title="订阅说明"
+      width="normal"
+      @close="closeSubscriptionNotice"
+    >
+      <div v-if="selectedPlan" class="space-y-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
+        <p>您现在订阅的是 {{ formatSelectedPaymentAmount(selectedPlan.price) }} 的套餐。</p>
+        <p>每天额度是 {{ selectedPlan.daily_limit_usd != null ? `$${selectedPlan.daily_limit_usd}` : '不限额度' }}，系统会在每日 00:00 自动充值到自己的账号上。</p>
+        <p>没有用完的额度会在每日 24:00 清空。</p>
+        <p>不可倒卖额度，不可共享额度，后台发现异常会封号处理。</p>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button class="btn btn-secondary" :disabled="submitting" @click="closeSubscriptionNotice">取消</button>
+          <button class="btn btn-primary" :disabled="submitting" @click="confirmSubscribeNotice">
+            {{ submitting ? t('common.processing') : '确定' }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
     <Teleport to="body">
       <Transition name="modal">
         <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" @click.self="closeRenewalModal">
@@ -257,6 +279,7 @@ import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiErro
 import { isMobileDevice } from '@/utils/device'
 import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
 import { METHOD_ORDER, getPaymentPopupFeatures } from '@/components/payment/providerConfig'
@@ -306,6 +329,7 @@ const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
+const showSubscriptionNotice = ref(false)
 
 const paymentPhase = ref<'select' | 'paying'>('select')
 
@@ -681,6 +705,17 @@ async function handleSubmitRecharge() {
 
 async function confirmSubscribe() {
   if (!selectedPlan.value || submitting.value) return
+  showSubscriptionNotice.value = true
+}
+
+function closeSubscriptionNotice() {
+  if (submitting.value) return
+  showSubscriptionNotice.value = false
+}
+
+async function confirmSubscribeNotice() {
+  if (!selectedPlan.value || submitting.value) return
+  showSubscriptionNotice.value = false
   await createOrder(selectedPlan.value.price, 'subscription', selectedPlan.value.id)
 }
 
@@ -751,6 +786,15 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       stripeRouteUrl,
       airwallexRouteUrl,
     })
+    let shouldOpenHostedSubscriptionPage = false
+    if (orderType === 'subscription') {
+      const payPageUrl = buildHostedPaymentPageUrl(decision.paymentState)
+      if (payPageUrl && decision.kind === 'qr_waiting') {
+        decision.paymentState = { ...decision.paymentState, qrCode: '', payUrl: payPageUrl }
+        decision.recovery = { ...decision.recovery, qrCode: '', payUrl: payPageUrl }
+        shouldOpenHostedSubscriptionPage = true
+      }
+    }
 
     if (decision.kind === 'wechat_oauth' && decision.oauth?.authorize_url) {
       window.location.href = buildWechatOAuthAuthorizeUrl(decision.oauth.authorize_url, {
@@ -832,6 +876,9 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       }
       openWindow(decision.paymentState.payUrl)
     }
+    if (shouldOpenHostedSubscriptionPage && decision.paymentState.payUrl) {
+      openWindow(decision.paymentState.payUrl)
+    }
   } catch (err: unknown) {
     const apiErr = err as Record<string, unknown>
     if (apiErr.reason === 'TOO_MANY_PENDING') {
@@ -866,6 +913,21 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
   } finally {
     submitting.value = false
   }
+}
+
+function buildHostedPaymentPageUrl(state: PaymentRecoverySnapshot): string {
+  if (!state.orderId || !state.qrCode) return ''
+  return router.resolve({
+    path: '/payment/qrcode',
+    query: {
+      order_id: String(state.orderId),
+      qr: state.qrCode,
+      pay_url: state.payUrl || undefined,
+      expires_at: state.expiresAt || undefined,
+      payment_type: state.paymentType || undefined,
+      out_trade_no: state.outTradeNo || undefined,
+    },
+  }).href
 }
 
 interface MobileQrFallbackContext {

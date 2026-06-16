@@ -283,8 +283,9 @@ func (s *PaymentService) VerifyOrderByOutTradeNo(ctx context.Context, outTradeNo
 	if o.UserID != userID {
 		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission for this order")
 	}
-	// Only verify orders that are still pending or recently expired
-	if o.Status == OrderStatusPending || o.Status == OrderStatusExpired {
+	// Verify orders that are still pending, recently expired, or previously
+	// failed before payment was persisted.
+	if o.Status == OrderStatusPending || o.Status == OrderStatusExpired || o.Status == OrderStatusFailed {
 		result := s.reconcilePaid(ctx, o)
 		if result == checkPaidResultAlreadyPaid {
 			// Reload order to get updated status
@@ -292,6 +293,15 @@ func (s *PaymentService) VerifyOrderByOutTradeNo(ctx context.Context, outTradeNo
 			if err != nil {
 				return nil, fmt.Errorf("reload order: %w", err)
 			}
+		}
+	}
+	if o.Status == OrderStatusFailed && o.PaidAt != nil {
+		if err := s.RetryFulfillment(ctx, o.ID); err != nil {
+			return nil, err
+		}
+		o, err = s.entClient.PaymentOrder.Get(ctx, o.ID)
+		if err != nil {
+			return nil, fmt.Errorf("reload order: %w", err)
 		}
 	}
 	return o, nil
