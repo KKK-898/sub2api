@@ -20,10 +20,19 @@ func RegisterAuthRoutes(
 	redisClient *redis.Client,
 	settingService *service.SettingService,
 ) {
-	// 创建速率限制器
+	// Create rate limiter.
 	rateLimiter := middleware.NewRateLimiter(redisClient)
 
-	// 公开接口
+	// Public endpoints.
+	// Public desktop endpoint. The redeem code is the gate for this flow, so it
+	// must not be blocked by backend-mode auth/admin middleware.
+	desktop := v1.Group("/desktop")
+	{
+		desktop.POST("/redeem-register", rateLimiter.LimitWithOptions("desktop-redeem-register", 20, time.Minute, middleware.RateLimitOptions{
+			FailureMode: middleware.RateLimitFailClose,
+		}), h.Auth.DesktopRedeemRegister)
+	}
+
 	auth := v1.Group("/auth")
 	auth.Use(servermiddleware.BackendModeAuthGuard(settingService))
 	{

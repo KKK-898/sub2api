@@ -273,6 +273,69 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	return token, user, nil
 }
 
+// RegisterDesktopRedeemUser creates a real user account for desktop redeem-code
+// login. The redeem code is the registration gate, so this path intentionally
+// bypasses public registration/email/invitation switches while still using the
+// normal user table, password hashing, bootstrap, and token generation logic.
+func (s *AuthService) RegisterDesktopRedeemUser(ctx context.Context, email, password string) (string, *User, error) {
+	if isReservedEmail(email) {
+		return "", nil, ErrEmailReserved
+	}
+
+	existsEmail, err := s.userRepo.ExistsByEmail(ctx, email)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Database error checking desktop redeem email exists: %v", err)
+		return "", nil, ErrServiceUnavailable
+	}
+	if existsEmail {
+		return "", nil, ErrEmailExists
+	}
+
+	hashedPassword, err := s.HashPassword(password)
+	if err != nil {
+		return "", nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	grantPlan := s.resolveSignupGrantPlan(ctx, "desktop_redeem")
+	var defaultRPMLimit int
+	if s.settingService != nil {
+		defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
+	}
+
+	user := &User{
+		Email:        email,
+		PasswordHash: hashedPassword,
+		Role:         RoleUser,
+		Balance:      grantPlan.Balance,
+		Concurrency:  grantPlan.Concurrency,
+		RPMLimit:     defaultRPMLimit,
+		Status:       StatusActive,
+		SignupSource: "desktop_redeem",
+	}
+
+	if err := s.userRepo.Create(ctx, user); err != nil {
+		if errors.Is(err, ErrEmailExists) {
+			return "", nil, ErrEmailExists
+		}
+		logger.LegacyPrintf("service.auth", "[Auth] Database error creating desktop redeem user: %v", err)
+		return "", nil, ErrServiceUnavailable
+	}
+	s.postAuthUserBootstrap(ctx, user, "desktop_redeem", true)
+	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by desktop redeem signup defaults")
+	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
+	if s.affiliateService != nil {
+		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for desktop redeem user %d: %v", user.ID, err)
+		}
+	}
+
+	token, err := s.GenerateToken(user)
+	if err != nil {
+		return "", nil, fmt.Errorf("generate token: %w", err)
+	}
+	return token, user, nil
+}
+
 // SendVerifyCodeResult 发送验证码返回结果
 type SendVerifyCodeResult struct {
 	Countdown int `json:"countdown"` // 倒计时秒数

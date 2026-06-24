@@ -748,7 +748,7 @@ func (s *UserService) canUseEmailAsSignInMethod(user *User, records []UserAuthId
 
 func emailSignupSourceAllowsLogin(signupSource string) bool {
 	signupSource = strings.ToLower(strings.TrimSpace(signupSource))
-	return signupSource == "" || signupSource == "email"
+	return signupSource == "" || signupSource == "email" || signupSource == "desktop_redeem"
 }
 
 func emailIdentitySupportsSignIn(record UserAuthIdentityRecord) bool {

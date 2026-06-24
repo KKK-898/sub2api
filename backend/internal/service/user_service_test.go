@@ -400,6 +400,30 @@ func TestGetProfileIdentitySummaries_AllowsUnbindWhenAnotherLoginMethodRemains(t
 	require.NotEmpty(t, summaries.LinuxDo.SubjectHint)
 }
 
+func TestGetProfileIdentitySummaries_TreatsDesktopRedeemEmailAsLoginMethod(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:           8,
+			Email:        "desk-user@desktop.gaogeai.cloud",
+			SignupSource: "desktop_redeem",
+		},
+		identities: []UserAuthIdentityRecord{
+			{
+				ProviderType:    "linuxdo",
+				ProviderKey:     "linuxdo",
+				ProviderSubject: "linuxdo-subject-8",
+			},
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 8, repo.getByIDUser)
+
+	require.NoError(t, err)
+	require.True(t, summaries.Email.Bound)
+	require.True(t, summaries.LinuxDo.CanUnbind)
+}
+
 func TestUnbindUserAuthProviderRejectsLastRemainingLoginMethod(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{

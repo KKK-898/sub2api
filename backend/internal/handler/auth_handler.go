@@ -2,9 +2,13 @@ package handler
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -95,6 +99,27 @@ func ensureLoginUserActive(user *service.User) error {
 	return nil
 }
 
+type DesktopRedeemRegisterRequest struct {
+	Code            string `json:"code" binding:"required"`
+	Password        string `json:"password"`
+	InitialPassword string `json:"initial_password"`
+}
+
+type DesktopRedeemRegisterAccount struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type DesktopRedeemRegisterResponse struct {
+	AuthResponse
+	Auth       AuthResponse                 `json:"auth"`
+	Account    DesktopRedeemRegisterAccount `json:"account"`
+	Email      string                       `json:"email"`
+	Password   string                       `json:"password"`
+	RedeemCode *dto.RedeemCode              `json:"redeem_code,omitempty"`
+	NewBalance *float64                     `json:"new_balance,omitempty"`
+}
+
 // respondWithTokenPair 生成 Token 对并返回认证响应
 // 如果 Token 对生成失败，回退到只返回 Access Token（向后兼容）
 func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User) {
@@ -128,6 +153,39 @@ func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User) {
 	})
 }
 
+func (h *AuthHandler) buildAuthResponse(ctx context.Context, user *service.User) (*AuthResponse, error) {
+	if err := ensureLoginUserActive(user); err != nil {
+		return nil, err
+	}
+	tokenPair, err := h.authService.GenerateTokenPair(ctx, user, "")
+	if err != nil {
+		token, tokenErr := h.authService.GenerateToken(user)
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
+		return &AuthResponse{
+			AccessToken: token,
+			TokenType:   "Bearer",
+			User:        dto.UserFromService(user),
+		}, nil
+	}
+	return &AuthResponse{
+		AccessToken:  tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
+		ExpiresIn:    tokenPair.ExpiresIn,
+		TokenType:    "Bearer",
+		User:         dto.UserFromService(user),
+	}, nil
+}
+
+func randomDesktopEmail() (string, error) {
+	random := make([]byte, 8)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	return "desk-" + time.Now().UTC().Format("20060102150405") + "-" + hex.EncodeToString(random) + "@desktop.gaogeai.cloud", nil
+}
+
 func (h *AuthHandler) ensureBackendModeAllowsUser(ctx context.Context, user *service.User) error {
 	if user == nil {
 		return infraerrors.Unauthorized("INVALID_USER", "user not found")
@@ -154,6 +212,89 @@ func (h *AuthHandler) isBackendModeEnabled(ctx context.Context) bool {
 		return settings.BackendModeEnabled
 	}
 	return h.settingSvc.IsBackendModeEnabled(ctx)
+}
+
+// DesktopRedeemRegister creates a real account from a valid backend redeem code.
+// It is intentionally public: the redeem code is the gate, not an admin session.
+// POST /api/v1/desktop/redeem-register
+func (h *AuthHandler) DesktopRedeemRegister(c *gin.Context) {
+	var req DesktopRedeemRegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	code := strings.TrimSpace(req.Code)
+	password := strings.TrimSpace(req.Password)
+	if password == "" {
+		password = strings.TrimSpace(req.InitialPassword)
+	}
+	if code == "" {
+		response.BadRequest(c, "redeem code is required")
+		return
+	}
+	if len(password) < 6 {
+		response.BadRequest(c, "password must be at least 6 characters")
+		return
+	}
+
+	redeemCode, err := h.redeemService.GetByCode(c.Request.Context(), code)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if redeemCode.IsExpired() {
+		response.ErrorFrom(c, service.ErrRedeemCodeExpired)
+		return
+	}
+	if !redeemCode.CanUse() {
+		response.ErrorFrom(c, service.ErrRedeemCodeUsed)
+		return
+	}
+
+	email, err := randomDesktopEmail()
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.New(http.StatusInternalServerError, "DESKTOP_ACCOUNT_EMAIL_FAILED", "failed to generate desktop account email"))
+		return
+	}
+
+	_, user, err := h.authService.RegisterDesktopRedeemUser(c.Request.Context(), email, password)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	redeemed, err := h.redeemService.Redeem(c.Request.Context(), user.ID, code)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if updatedUser, userErr := h.userService.GetByID(c.Request.Context(), user.ID); userErr == nil {
+		user = updatedUser
+	}
+
+	auth, err := h.buildAuthResponse(c.Request.Context(), user)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	out := DesktopRedeemRegisterResponse{
+		AuthResponse: *auth,
+		Auth:         *auth,
+		Account: DesktopRedeemRegisterAccount{
+			Email:    email,
+			Password: password,
+		},
+		Email:      email,
+		Password:   password,
+		RedeemCode: dto.RedeemCodeFromService(redeemed),
+	}
+	if auth.User != nil {
+		balance := auth.User.Balance
+		out.NewBalance = &balance
+	}
+	response.Success(c, out)
 }
 
 // Register handles user registration
