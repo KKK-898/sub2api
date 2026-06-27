@@ -34,6 +34,10 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if !cfg.Enabled {
 		return nil, infraerrors.Forbidden("PAYMENT_DISABLED", "payment system is disabled")
 	}
+	useBackupBridge, err := s.shouldUseBackupPaymentBridge(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 	plan, err := s.validateOrderInput(ctx, req, cfg)
 	if err != nil {
 		return nil, err
@@ -61,7 +65,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	}
 	feeRate := cfg.RechargeFeeRate
 	methodCurrency := payment.DefaultPaymentCurrency
-	if s.configService != nil {
+	if s.configService != nil && !useBackupBridge {
 		methodCurrency, err = s.configService.ValidateMethodCurrencyConsistency(ctx, req.PaymentType)
 		if err != nil {
 			return nil, err
@@ -70,6 +74,20 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	payAmountStr, payAmount, err := calculateCreateOrderPayAmount(limitAmount, feeRate, methodCurrency)
 	if err != nil {
 		return nil, err
+	}
+	if useBackupBridge {
+		order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := s.invokeBackupPaymentBridge(ctx, order, req, payAmount)
+		if err != nil {
+			_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
+				SetStatus(OrderStatusFailed).
+				Save(ctx)
+			return nil, err
+		}
+		return resp, nil
 	}
 	sel, err := s.selectCreateOrderInstance(ctx, req, cfg, payAmount)
 	if err != nil {
