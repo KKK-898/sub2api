@@ -24,8 +24,8 @@ import (
 const (
 	paymentBackupModeMain       = "main"
 	paymentBackupModeBackup     = "backup"
-	paymentBackupBridgeBaseURL  = "https://pay.gaogeai.cloud/pay"
-	paymentBackupAdminConfigURL = "https://ruanjianhoutai.gaogeai.cloud/api/v1/desktop/online-payment/config"
+	paymentBackupBridgeBaseURL  = "https://payi.jieyouai.it.com/pay"
+	paymentBackupAdminConfigURL = "https://ruanjianhoutai.jieyouai.it.com/api/v1/desktop/online-payment/config"
 )
 
 type softwareAdminOnlinePaymentConfig struct {
