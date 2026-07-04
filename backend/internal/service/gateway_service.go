@@ -9028,6 +9028,7 @@ type postUsageBillingParams struct {
 	Subscription          *UserSubscription
 	RequestPayloadHash    string
 	IsSubscriptionBill    bool
+	PlatformSubDecision   *PlatformSubscriptionBillingDecision
 	AccountRateMultiplier float64
 	APIKeyService         APIKeyQuotaUpdater
 	Platform              string // 来自 APIKey 关联 Group 的平台标识
@@ -9067,6 +9068,37 @@ func (p *postUsageBillingParams) shouldUpdateRateLimits() bool {
 
 func (p *postUsageBillingParams) shouldUpdateAccountQuota() bool {
 	return p.Cost.TotalCost > 0 && p.Account.IsAPIKeyOrBedrock() && p.Account.HasAnyQuotaLimit()
+}
+
+func (p *postUsageBillingParams) isPlatformSubscriptionAttribution() bool {
+	return p != nil &&
+		p.PlatformSubDecision != nil &&
+		p.PlatformSubDecision.IsActive() &&
+		p.PlatformSubDecision.Action == PlatformSubscriptionActionSubscription
+}
+
+func incrementPlatformSubscriptionUsage(ctx context.Context, p *postUsageBillingParams, deps *billingDeps) {
+	if p == nil ||
+		p.Cost == nil ||
+		p.Cost.ActualCost <= 0 ||
+		p.User == nil ||
+		!p.isPlatformSubscriptionAttribution() ||
+		deps == nil ||
+		deps.billingCacheService == nil ||
+		deps.billingCacheService.platformSubBilling == nil {
+		return
+	}
+	deps.billingCacheService.platformSubBilling.IncrementUserUsed(ctx, p.User.ID, p.PlatformSubDecision, p.Cost.ActualCost)
+}
+
+func applyPlatformSubscriptionUsageLogAttribution(log *UsageLog, decision *PlatformSubscriptionBillingDecision) {
+	if log == nil || decision == nil || !decision.IsActive() {
+		return
+	}
+	log.PlatformSubscriptionAction = optionalTrimmedStringPtr(decision.Action)
+	log.PlatformSubscriptionRuleID = optionalTrimmedStringPtr(decision.RuleID)
+	log.PlatformSubscriptionGrantID = optionalTrimmedStringPtr(decision.GrantID)
+	log.PlatformSubscriptionGrantDate = optionalTrimmedStringPtr(decision.GrantDate)
 }
 
 // postUsageBilling is the legacy fallback billing path used when the unified
@@ -9123,7 +9155,7 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 	//   - flusher_enabled=false（降级）:保留原有同步直写 DB
 	//   - flusher_enabled=true:跳过直写 DB，由 flusher 异步批量刷（markDirty 在 IncrementUserPlatformQuotaUsage 内部完成）
 	//   - 失败仅记 ALERT log + counter，不阻断主扣费流程
-	if !p.IsSubscriptionBill && p.Platform != "" && cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
+	if !p.IsSubscriptionBill && !p.isPlatformSubscriptionAttribution() && p.Platform != "" && cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
 		if deps.billingCacheService.HasUserPlatformQuotaLimit(billingCtx, p.User.ID, p.Platform) {
 			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, cost.ActualCost)
 			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
@@ -9136,6 +9168,8 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 			// flusher_enabled=true:不直写 DB，flusher 异步批量刷
 		}
 	}
+
+	incrementPlatformSubscriptionUsage(billingCtx, p, deps)
 
 	// NOTE: finalizePostUsageBilling is NOT called here to avoid double-queuing
 	// cache updates. The legacy path does DB writes directly; the finalize path
@@ -9290,7 +9324,7 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 	//     限制在并发 in-flight 请求数量内（旧实现的异步入队会让超支无限累积直到 worker 处理）
 	//   - DB 异步(flusher_enabled=false):在独立 goroutine 中走 detached context,失败用 ALERT log 触发 oncall 对账
 	//   - flusher_enabled=true:不直写 DB,由 flusher 异步批量刷（markDirty 已在 IncrementUserPlatformQuotaUsage 内部完成）
-	if !p.IsSubscriptionBill && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
+	if !p.IsSubscriptionBill && !p.isPlatformSubscriptionAttribution() && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
 		if deps.billingCacheService.HasUserPlatformQuotaLimit(ctx, p.User.ID, p.Platform) {
 			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
 			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
@@ -9316,6 +9350,8 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 			// flusher_enabled=true:不直写 DB,flusher 异步批量刷
 		}
 	}
+
+	incrementPlatformSubscriptionUsage(ctx, p, deps)
 
 	// Notification checks run async — all parameters are already captured,
 	// no dependency on the request context or upstream connection.
@@ -9643,7 +9679,11 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
 
 	// 判断计费方式：订阅模式 vs 余额模式
+	platformSubDecision := PlatformSubscriptionDecisionFromContext(ctx)
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+	if platformSubDecision != nil && platformSubDecision.IsActive() {
+		isSubscriptionBilling = false
+	}
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
 		billingType = BillingTypeSubscription
@@ -9653,6 +9693,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	accountRateMultiplier := account.BillingRateMultiplier()
 	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
 		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
+	applyPlatformSubscriptionUsageLogAttribution(usageLog, platformSubDecision)
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey.GroupID != nil {
@@ -9694,6 +9735,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		Subscription:          subscription,
 		RequestPayloadHash:    resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
 		IsSubscriptionBill:    isSubscriptionBilling,
+		PlatformSubDecision:   platformSubDecision,
 		AccountRateMultiplier: accountRateMultiplier,
 		APIKeyService:         input.APIKeyService,
 		Platform:              quotaPlatform,

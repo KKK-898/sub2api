@@ -30,7 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, created_at"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, platform_subscription_action, platform_subscription_rule_id, platform_subscription_grant_id, platform_subscription_grant_date, created_at"
 
 // usageLogInsertArgTypes must stay in the same order as:
 //  1. prepareUsageLogInsert().args
@@ -89,6 +89,10 @@ var usageLogInsertArgTypes = [...]string{
 	"text",        // billing_tier
 	"text",        // billing_mode
 	"numeric",     // account_stats_cost
+	"text",        // platform_subscription_action
+	"text",        // platform_subscription_rule_id
+	"text",        // platform_subscription_grant_id
+	"text",        // platform_subscription_grant_date
 	"timestamptz", // created_at
 }
 
@@ -449,6 +453,10 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
+			platform_subscription_action,
+			platform_subscription_rule_id,
+			platform_subscription_grant_id,
+			platform_subscription_grant_date,
 			created_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
@@ -456,7 +464,7 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -897,10 +905,14 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
+			platform_subscription_action,
+			platform_subscription_rule_id,
+			platform_subscription_grant_id,
+			platform_subscription_grant_date,
 			created_at
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(keys)*50)
+	args := make([]any, 0, len(keys)*len(usageLogInsertArgTypes))
 	argPos := 1
 	for idx, key := range keys {
 		if idx > 0 {
@@ -978,6 +990,10 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				billing_tier,
 				billing_mode,
 				account_stats_cost,
+				platform_subscription_action,
+				platform_subscription_rule_id,
+				platform_subscription_grant_id,
+				platform_subscription_grant_date,
 				created_at
 			)
 			SELECT
@@ -1030,6 +1046,10 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				billing_tier,
 				billing_mode,
 				account_stats_cost,
+				platform_subscription_action,
+				platform_subscription_rule_id,
+				platform_subscription_grant_id,
+				platform_subscription_grant_date,
 				created_at
 			FROM input
 			ON CONFLICT (request_id, api_key_id) DO NOTHING
@@ -1122,10 +1142,14 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
+			platform_subscription_action,
+			platform_subscription_rule_id,
+			platform_subscription_grant_id,
+			platform_subscription_grant_date,
 			created_at
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(preparedList)*50)
+	args := make([]any, 0, len(preparedList)*len(usageLogInsertArgTypes))
 	argPos := 1
 	for idx, prepared := range preparedList {
 		if idx > 0 {
@@ -1200,6 +1224,10 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
+			platform_subscription_action,
+			platform_subscription_rule_id,
+			platform_subscription_grant_id,
+			platform_subscription_grant_date,
 			created_at
 		)
 		SELECT
@@ -1252,6 +1280,10 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
+			platform_subscription_action,
+			platform_subscription_rule_id,
+			platform_subscription_grant_id,
+			platform_subscription_grant_date,
 			created_at
 		FROM input
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
@@ -1312,6 +1344,10 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
+			platform_subscription_action,
+			platform_subscription_rule_id,
+			platform_subscription_grant_id,
+			platform_subscription_grant_date,
 			created_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
@@ -1319,7 +1355,7 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1424,6 +1460,10 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			billingTier,
 			billingMode,
 			log.AccountStatsCost, // account_stats_cost
+			nullString(log.PlatformSubscriptionAction),
+			nullString(log.PlatformSubscriptionRuleID),
+			nullString(log.PlatformSubscriptionGrantID),
+			nullString(log.PlatformSubscriptionGrantDate),
 			createdAt,
 		},
 	}
@@ -1859,6 +1899,56 @@ func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID 
 		r.sql,
 		query,
 		[]any{userID, startTime, endTime},
+		&stats.TotalRequests,
+		&stats.TotalInputTokens,
+		&stats.TotalOutputTokens,
+		&stats.TotalCacheTokens,
+		&stats.TotalCacheCreationTokens,
+		&stats.TotalCacheReadTokens,
+		&stats.TotalCost,
+		&stats.TotalActualCost,
+		&stats.AverageDurationMs,
+	); err != nil {
+		return nil, err
+	}
+	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheTokens
+	return &stats, nil
+}
+
+// GetPlatformSubscriptionUsageStats returns usage attributed to platform subscription quota.
+// Rows written before platform subscription attribution existed have a NULL/empty
+// action; for active platform subscribers those rows represent the legacy
+// "subscription first" behavior and must continue reducing subscription quota.
+func (r *usageLogRepository) GetPlatformSubscriptionUsageStats(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
+	query := `
+		SELECT
+			COUNT(*) as total_requests,
+			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as total_cache_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+			COALESCE(SUM(total_cost), 0) as total_cost,
+			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
+			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
+		FROM usage_logs
+		WHERE user_id = $1
+			AND created_at >= $2
+			AND created_at < $3
+			AND (
+				platform_subscription_action = $4
+				OR platform_subscription_action IS NULL
+				OR platform_subscription_action = ''
+			)
+			AND actual_cost > 0
+	`
+
+	var stats usagestats.UsageStats
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		query,
+		[]any{userID, startTime, endTime, service.PlatformSubscriptionActionSubscription},
 		&stats.TotalRequests,
 		&stats.TotalInputTokens,
 		&stats.TotalOutputTokens,
@@ -4362,6 +4452,10 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		billingTier           sql.NullString
 		billingMode           sql.NullString
 		accountStatsCost      sql.NullFloat64
+		platformSubAction     sql.NullString
+		platformSubRuleID     sql.NullString
+		platformSubGrantID    sql.NullString
+		platformSubGrantDate  sql.NullString
 		createdAt             time.Time
 	)
 
@@ -4416,6 +4510,10 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&billingTier,
 		&billingMode,
 		&accountStatsCost,
+		&platformSubAction,
+		&platformSubRuleID,
+		&platformSubGrantID,
+		&platformSubGrantDate,
 		&createdAt,
 	); err != nil {
 		return nil, err
@@ -4524,6 +4622,18 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 	}
 	if accountStatsCost.Valid {
 		log.AccountStatsCost = &accountStatsCost.Float64
+	}
+	if platformSubAction.Valid {
+		log.PlatformSubscriptionAction = &platformSubAction.String
+	}
+	if platformSubRuleID.Valid {
+		log.PlatformSubscriptionRuleID = &platformSubRuleID.String
+	}
+	if platformSubGrantID.Valid {
+		log.PlatformSubscriptionGrantID = &platformSubGrantID.String
+	}
+	if platformSubGrantDate.Valid {
+		log.PlatformSubscriptionGrantDate = &platformSubGrantDate.String
 	}
 
 	return log, nil

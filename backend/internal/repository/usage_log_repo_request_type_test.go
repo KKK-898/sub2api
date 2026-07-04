@@ -90,6 +90,10 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			sqlmock.AnyArg(), // platform_subscription_action
+			sqlmock.AnyArg(), // platform_subscription_rule_id
+			sqlmock.AnyArg(), // platform_subscription_grant_id
+			sqlmock.AnyArg(), // platform_subscription_grant_date
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
@@ -173,6 +177,10 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			sqlmock.AnyArg(), // platform_subscription_action
+			sqlmock.AnyArg(), // platform_subscription_rule_id
+			sqlmock.AnyArg(), // platform_subscription_grant_id
+			sqlmock.AnyArg(), // platform_subscription_grant_date
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
@@ -804,6 +812,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullString{},
 			sql.NullFloat64{},
+			sql.NullString{},
+			sql.NullString{},
+			sql.NullString{},
+			sql.NullString{},
 			now,
 		}})
 		require.NoError(t, err)
@@ -872,6 +884,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullString{},  // platform_subscription_action
+			sql.NullString{},  // platform_subscription_rule_id
+			sql.NullString{},  // platform_subscription_grant_id
+			sql.NullString{},  // platform_subscription_grant_date
 			now,
 		}})
 		require.NoError(t, err)
@@ -924,6 +940,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullString{},  // platform_subscription_action
+			sql.NullString{},  // platform_subscription_rule_id
+			sql.NullString{},  // platform_subscription_grant_id
+			sql.NullString{},  // platform_subscription_grant_date
 			now,
 		}})
 		require.NoError(t, err)
@@ -976,6 +996,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullString{},  // platform_subscription_action
+			sql.NullString{},  // platform_subscription_rule_id
+			sql.NullString{},  // platform_subscription_grant_id
+			sql.NullString{},  // platform_subscription_grant_date
 			now,
 		}})
 		require.NoError(t, err)

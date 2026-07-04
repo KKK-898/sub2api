@@ -113,6 +113,7 @@ type BillingCacheService struct {
 	cfg                   *config.Config
 	circuitBreaker        *billingCircuitBreaker
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	platformSubBilling    *PlatformSubscriptionBillingService
 
 	cacheWriteChan     chan cacheWriteTask
 	cacheWriteWg       sync.WaitGroup
@@ -152,6 +153,13 @@ func NewBillingCacheService(
 	svc.circuitBreaker = newBillingCircuitBreaker(cfg.Billing.CircuitBreaker)
 	svc.startCacheWriteWorkers()
 	return svc
+}
+
+func (s *BillingCacheService) SetPlatformSubscriptionBillingService(platformSubBilling *PlatformSubscriptionBillingService) {
+	if s == nil {
+		return
+	}
+	s.platformSubBilling = platformSubBilling
 }
 
 // Stop 关闭缓存写入工作池
@@ -740,22 +748,59 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 	if s.circuitBreaker != nil && !s.circuitBreaker.Allow() {
 		return ErrBillingServiceUnavailable
 	}
+	logGroupID := int64(0)
+	if group != nil {
+		logGroupID = group.ID
+	}
 
-	// 判断计费模式
-	isSubscriptionMode := group != nil && group.IsSubscriptionType() && subscription != nil
+	platformDecision, hasPlatformDecision := s.resolvePlatformSubscriptionBillingDecision(ctx, user, group, platform)
+	if hasPlatformDecision {
+		if err := s.checkPlatformSubscriptionEligibility(ctx, user.ID, platformDecision); err != nil {
+			logger.LegacyPrintf("service.billing_cache",
+				"platform subscription eligibility failed user=%d group=%d platform=%s action=%s rule_id=%s grant_id=%s grant_date=%s total_balance=%.8f remaining=%.8f personal=%.8f reason=%s err=%v",
+				user.ID,
+				logGroupID,
+				platform,
+				platformDecision.Action,
+				platformDecision.RuleID,
+				platformDecision.GrantID,
+				platformDecision.GrantDate,
+				platformDecision.TotalBalance,
+				platformDecision.Remaining,
+				platformDecision.Personal,
+				platformDecision.Reason,
+				err,
+			)
+			return err
+		}
+	}
 
-	if isSubscriptionMode {
+	// 判断计费模式。平台订阅规则命中时，物理扣费仍走用户 balance，因此不进入 SUB2 官方订阅扣费检查。
+	isSubscriptionMode := !hasPlatformDecision && group != nil && group.IsSubscriptionType() && subscription != nil
+
+	if !hasPlatformDecision && isSubscriptionMode {
 		if err := s.checkSubscriptionEligibility(ctx, user.ID, group, subscription); err != nil {
 			return err
 		}
-	} else {
+	} else if !hasPlatformDecision {
 		if err := s.checkBalanceEligibility(ctx, user.ID); err != nil {
+			logger.LegacyPrintf("service.billing_cache",
+				"balance eligibility failed without platform subscription decision user=%d group=%d platform=%s has_subscription=%t err=%v",
+				user.ID,
+				logGroupID,
+				platform,
+				subscription != nil,
+				err,
+			)
 			return err
 		}
 	}
 
 	// user × platform quota 仅在 standard（余额）模式生效；订阅模式豁免
-	if !isSubscriptionMode {
+	isPlatformSubscriptionMode := hasPlatformDecision &&
+		platformDecision != nil &&
+		platformDecision.Action == PlatformSubscriptionActionSubscription
+	if !isSubscriptionMode && !isPlatformSubscriptionMode {
 		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform); err != nil {
 			return err
 		}
@@ -873,6 +918,77 @@ func (s *BillingCacheService) balanceBelowEligibilityThreshold(balance float64) 
 	}
 	minimumReserve := s.minimumBalanceReserve()
 	return minimumReserve > 0 && balance < minimumReserve
+}
+
+func (s *BillingCacheService) resolvePlatformSubscriptionBillingDecision(ctx context.Context, user *User, group *Group, platform string) (*PlatformSubscriptionBillingDecision, bool) {
+	setPlatformSubscriptionDecisionOnContext(ctx, nil)
+	if s == nil || s.platformSubBilling == nil || user == nil {
+		return nil, false
+	}
+	var groupID *int64
+	groupName := ""
+	if group != nil {
+		id := group.ID
+		groupID = &id
+		groupName = group.Name
+	}
+	decision, ok := s.platformSubBilling.Resolve(ctx, PlatformSubscriptionBillingInput{
+		UserID:         user.ID,
+		RequestedModel: PlatformSubscriptionRequestedModelFromContext(ctx),
+		GroupID:        groupID,
+		GroupName:      groupName,
+		Platform:       platform,
+	})
+	if !ok || decision == nil || !decision.IsActive() {
+		return nil, false
+	}
+	setPlatformSubscriptionDecisionOnContext(ctx, decision)
+	return decision, true
+}
+
+func (s *BillingCacheService) checkPlatformSubscriptionEligibility(ctx context.Context, userID int64, decision *PlatformSubscriptionBillingDecision) error {
+	if decision == nil || !decision.IsActive() {
+		return nil
+	}
+	if decision.Action == PlatformSubscriptionActionDeny {
+		return ErrPlatformSubscriptionBillingDenied
+	}
+
+	balance, err := s.GetUserBalance(ctx, userID)
+	if err != nil {
+		if s.circuitBreaker != nil {
+			s.circuitBreaker.OnFailure(err)
+		}
+		logger.LegacyPrintf("service.billing_cache", "ALERT: platform subscription balance check failed for user %d: %v", userID, err)
+		return ErrBillingServiceUnavailable.WithCause(err)
+	}
+	if s.circuitBreaker != nil {
+		s.circuitBreaker.OnSuccess()
+	}
+
+	remaining := maxFloat(decision.Remaining, 0)
+	personal := balance - remaining
+	decision.TotalBalance = balance
+	decision.Personal = personal
+
+	switch decision.Action {
+	case PlatformSubscriptionActionSubscription:
+		if remaining > 0 {
+			return nil
+		}
+		if !s.balanceBelowEligibilityThreshold(personal) {
+			decision.UseBalance("subscription_exhausted_balance_fallback", balance, personal)
+			return nil
+		}
+		return ErrInsufficientBalance
+	case PlatformSubscriptionActionBalance:
+		if !s.balanceBelowEligibilityThreshold(personal) {
+			return nil
+		}
+		return ErrInsufficientBalance
+	default:
+		return ErrPlatformSubscriptionBillingDenied
+	}
 }
 
 // checkBalanceEligibility 检查余额模式资格

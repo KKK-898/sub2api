@@ -533,7 +533,12 @@ type AdminUsageLog struct {
 	// AccountStatsCost 自定义定价规则计算的账号统计费用（nil 表示使用默认公式）
 	AccountStatsCost *float64 `json:"account_stats_cost,omitempty"`
 
-	// IPAddress 用户请求 IP
+	PlatformSubscriptionAction    *string `json:"platform_subscription_action,omitempty"`
+	PlatformSubscriptionRuleID    *string `json:"platform_subscription_rule_id,omitempty"`
+	PlatformSubscriptionGrantID   *string `json:"platform_subscription_grant_id,omitempty"`
+	PlatformSubscriptionGrantDate *string `json:"platform_subscription_grant_date,omitempty"`
+
+	// IPAddress 用户请求 IP（仅管理员可见）
 	IPAddress *string `json:"ip_address,omitempty"`
 
 	// Account 最小账号信息（避免泄露敏感字段）

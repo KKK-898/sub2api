@@ -461,3 +461,12 @@ func (s *UsageService) GetStatsWithFilters(ctx context.Context, filters usagesta
 	}
 	return stats, nil
 }
+
+// GetPlatformSubscriptionUsageStats returns usage attributed to platform subscription quota.
+func (s *UsageService) GetPlatformSubscriptionUsageStats(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
+	stats, err := s.usageRepo.GetPlatformSubscriptionUsageStats(ctx, userID, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("get platform subscription usage stats: %w", err)
+	}
+	return stats, nil
+}
