@@ -462,14 +462,24 @@ go test ./internal/repository
 ```bash
 cd /opt/sub2api/source
 STAMP=$(date +%Y%m%d-%H%M%S)
-IMAGE="gaoge-sub2api:platform-subscription-$STAMP"
+OFFICIAL_VERSION="0.1.144"
+IMAGE="gaoge-sub2api:v${OFFICIAL_VERSION}-platform-subscription-$STAMP"
 
 docker build \
   -t "$IMAGE" \
+  --build-arg VERSION="$OFFICIAL_VERSION" \
+  --build-arg COMMIT="$(git rev-parse --short=12 HEAD)" \
   --build-arg GOPROXY=https://goproxy.cn,direct \
   --build-arg GOSUMDB=sum.golang.google.cn \
   -f Dockerfile .
 ```
+
+注意：
+
+- `VERSION` 必须使用纯官方版本号，例如 `0.1.144`。
+- 不要写成 `v0.1.144`，否则前端会显示成 `vv0.1.144`。
+- 不要写成 `0.1.144-gaoge` 或 `v0.1.144-gaoge`，否则后台更新检查可能把自定义后缀误判为还有官方更新。
+- 自定义标记放在 Docker 镜像名里，例如 `gaoge-sub2api:v0.1.144-platform-subscription-20260704-091535`。
 
 构建成功后再切换容器。不要在构建失败时停止旧容器。
 
@@ -768,4 +778,3 @@ git reset --hard origin/codex/platform-subscription-billing-v1
 ```text
 docker run 官方原版镜像
 ```
-
