@@ -73,6 +73,7 @@ type UsageLogRepository interface {
 
 	// Aggregated stats (optimized)
 	GetUserStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
+	GetPlatformSubscriptionUsageStats(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetAPIKeyStatsAggregated(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetAccountStatsAggregated(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetModelStatsAggregated(ctx context.Context, modelName string, startTime, endTime time.Time) (*usagestats.UsageStats, error)

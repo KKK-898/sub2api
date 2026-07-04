@@ -5998,7 +5998,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	// Determine billing type
+	platformSubDecision := PlatformSubscriptionDecisionFromContext(ctx)
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+	if platformSubDecision != nil && platformSubDecision.IsActive() {
+		isSubscriptionBilling = false
+	}
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
 		billingType = BillingTypeSubscription
@@ -6098,6 +6102,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if subscription != nil {
 		usageLog.SubscriptionID = &subscription.ID
 	}
+	applyPlatformSubscriptionUsageLogAttribution(usageLog, platformSubDecision)
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey.GroupID != nil {
@@ -6123,6 +6128,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			Subscription:          subscription,
 			RequestPayloadHash:    resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
 			IsSubscriptionBill:    isSubscriptionBilling,
+			PlatformSubDecision:   platformSubDecision,
 			AccountRateMultiplier: accountRateMultiplier,
 			APIKeyService:         input.APIKeyService,
 			Platform:              PlatformFromAPIKey(apiKey),

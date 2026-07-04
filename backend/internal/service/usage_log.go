@@ -131,6 +131,11 @@ type UsageLog struct {
 	GroupID        *int64
 	SubscriptionID *int64
 
+	PlatformSubscriptionAction    *string
+	PlatformSubscriptionRuleID    *string
+	PlatformSubscriptionGrantID   *string
+	PlatformSubscriptionGrantDate *string
+
 	InputTokens         int
 	OutputTokens        int
 	CacheCreationTokens int

@@ -59,40 +59,41 @@ const (
 const DefaultUpstreamResponseReadMaxBytes int64 = 128 * 1024 * 1024
 
 type Config struct {
-	Server                  ServerConfig                  `mapstructure:"server"`
-	Log                     LogConfig                     `mapstructure:"log"`
-	CORS                    CORSConfig                    `mapstructure:"cors"`
-	Security                SecurityConfig                `mapstructure:"security"`
-	Billing                 BillingConfig                 `mapstructure:"billing"`
-	Turnstile               TurnstileConfig               `mapstructure:"turnstile"`
-	Database                DatabaseConfig                `mapstructure:"database"`
-	Redis                   RedisConfig                   `mapstructure:"redis"`
-	Ops                     OpsConfig                     `mapstructure:"ops"`
-	JWT                     JWTConfig                     `mapstructure:"jwt"`
-	Totp                    TotpConfig                    `mapstructure:"totp"`
-	LinuxDo                 LinuxDoConnectConfig          `mapstructure:"linuxdo_connect"`
-	WeChat                  WeChatConnectConfig           `mapstructure:"wechat_connect"`
-	OIDC                    OIDCConnectConfig             `mapstructure:"oidc_connect"`
-	DingTalk                DingTalkConnectConfig         `mapstructure:"dingtalk_connect"`
-	GitHubOAuth             EmailOAuthProviderConfig      `mapstructure:"github_oauth"`
-	GoogleOAuth             EmailOAuthProviderConfig      `mapstructure:"google_oauth"`
-	Default                 DefaultConfig                 `mapstructure:"default"`
-	RateLimit               RateLimitConfig               `mapstructure:"rate_limit"`
-	Pricing                 PricingConfig                 `mapstructure:"pricing"`
-	Gateway                 GatewayConfig                 `mapstructure:"gateway"`
-	APIKeyAuth              APIKeyAuthCacheConfig         `mapstructure:"api_key_auth_cache"`
-	SubscriptionCache       SubscriptionCacheConfig       `mapstructure:"subscription_cache"`
-	SubscriptionMaintenance SubscriptionMaintenanceConfig `mapstructure:"subscription_maintenance"`
-	Dashboard               DashboardCacheConfig          `mapstructure:"dashboard_cache"`
-	DashboardAgg            DashboardAggregationConfig    `mapstructure:"dashboard_aggregation"`
-	UsageCleanup            UsageCleanupConfig            `mapstructure:"usage_cleanup"`
-	Concurrency             ConcurrencyConfig             `mapstructure:"concurrency"`
-	TokenRefresh            TokenRefreshConfig            `mapstructure:"token_refresh"`
-	RunMode                 string                        `mapstructure:"run_mode" yaml:"run_mode"`
-	Timezone                string                        `mapstructure:"timezone"` // e.g. "Asia/Shanghai", "UTC"
-	Gemini                  GeminiConfig                  `mapstructure:"gemini"`
-	Update                  UpdateConfig                  `mapstructure:"update"`
-	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
+	Server                      ServerConfig                      `mapstructure:"server"`
+	Log                         LogConfig                         `mapstructure:"log"`
+	CORS                        CORSConfig                        `mapstructure:"cors"`
+	Security                    SecurityConfig                    `mapstructure:"security"`
+	Billing                     BillingConfig                     `mapstructure:"billing"`
+	PlatformSubscriptionBilling PlatformSubscriptionBillingConfig `mapstructure:"platform_subscription_billing"`
+	Turnstile                   TurnstileConfig                   `mapstructure:"turnstile"`
+	Database                    DatabaseConfig                    `mapstructure:"database"`
+	Redis                       RedisConfig                       `mapstructure:"redis"`
+	Ops                         OpsConfig                         `mapstructure:"ops"`
+	JWT                         JWTConfig                         `mapstructure:"jwt"`
+	Totp                        TotpConfig                        `mapstructure:"totp"`
+	LinuxDo                     LinuxDoConnectConfig              `mapstructure:"linuxdo_connect"`
+	WeChat                      WeChatConnectConfig               `mapstructure:"wechat_connect"`
+	OIDC                        OIDCConnectConfig                 `mapstructure:"oidc_connect"`
+	DingTalk                    DingTalkConnectConfig             `mapstructure:"dingtalk_connect"`
+	GitHubOAuth                 EmailOAuthProviderConfig          `mapstructure:"github_oauth"`
+	GoogleOAuth                 EmailOAuthProviderConfig          `mapstructure:"google_oauth"`
+	Default                     DefaultConfig                     `mapstructure:"default"`
+	RateLimit                   RateLimitConfig                   `mapstructure:"rate_limit"`
+	Pricing                     PricingConfig                     `mapstructure:"pricing"`
+	Gateway                     GatewayConfig                     `mapstructure:"gateway"`
+	APIKeyAuth                  APIKeyAuthCacheConfig             `mapstructure:"api_key_auth_cache"`
+	SubscriptionCache           SubscriptionCacheConfig           `mapstructure:"subscription_cache"`
+	SubscriptionMaintenance     SubscriptionMaintenanceConfig     `mapstructure:"subscription_maintenance"`
+	Dashboard                   DashboardCacheConfig              `mapstructure:"dashboard_cache"`
+	DashboardAgg                DashboardAggregationConfig        `mapstructure:"dashboard_aggregation"`
+	UsageCleanup                UsageCleanupConfig                `mapstructure:"usage_cleanup"`
+	Concurrency                 ConcurrencyConfig                 `mapstructure:"concurrency"`
+	TokenRefresh                TokenRefreshConfig                `mapstructure:"token_refresh"`
+	RunMode                     string                            `mapstructure:"run_mode" yaml:"run_mode"`
+	Timezone                    string                            `mapstructure:"timezone"` // e.g. "Asia/Shanghai", "UTC"
+	Gemini                      GeminiConfig                      `mapstructure:"gemini"`
+	Update                      UpdateConfig                      `mapstructure:"update"`
+	Idempotency                 IdempotencyConfig                 `mapstructure:"idempotency"`
 }
 
 type LogConfig struct {
@@ -652,6 +653,15 @@ type BillingConfig struct {
 	// UserPlatformQuotaSentinelTTLSeconds sentinel(无 limit 占位)entry 的 TTL,
 	// 显著短于 quota cache 默认 86400s 以控 Redis 内存;默认 3600=1h。
 	UserPlatformQuotaSentinelTTLSeconds int `mapstructure:"user_platform_quota_sentinel_ttl_seconds"`
+}
+
+type PlatformSubscriptionBillingConfig struct {
+	Enabled            bool   `mapstructure:"enabled"`
+	BackendURL         string `mapstructure:"backend_url"`
+	InternalToken      string `mapstructure:"internal_token"`
+	RulesTTLSeconds    int    `mapstructure:"rules_ttl_seconds"`
+	UserTTLSeconds     int    `mapstructure:"user_ttl_seconds"`
+	HTTPTimeoutSeconds int    `mapstructure:"http_timeout_seconds"`
 }
 
 type CircuitBreakerConfig struct {
@@ -1609,6 +1619,12 @@ func setDefaults() {
 	viper.SetDefault("billing.circuit_breaker.half_open_requests", 3)
 	viper.SetDefault("billing.user_platform_quota_cache_ttl_seconds", 86400)
 	viper.SetDefault("billing.user_platform_quota_sentinel_ttl_seconds", 3600)
+	viper.SetDefault("platform_subscription_billing.enabled", false)
+	viper.SetDefault("platform_subscription_billing.backend_url", "")
+	viper.SetDefault("platform_subscription_billing.internal_token", "")
+	viper.SetDefault("platform_subscription_billing.rules_ttl_seconds", 600)
+	viper.SetDefault("platform_subscription_billing.user_ttl_seconds", 120)
+	viper.SetDefault("platform_subscription_billing.http_timeout_seconds", 3)
 
 	// Turnstile
 	viper.SetDefault("turnstile.required", false)

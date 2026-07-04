@@ -394,6 +394,7 @@ func setOpsRequestContext(c *gin.Context, model string, stream bool) {
 	c.Set(opsStreamKey, stream)
 	if c.Request != nil && model != "" {
 		ctx := context.WithValue(c.Request.Context(), ctxkey.Model, model)
+		ctx = service.ContextWithPlatformSubscriptionRequest(ctx, model)
 		c.Request = c.Request.WithContext(ctx)
 	}
 }

@@ -348,6 +348,46 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 	response.Success(c, stats)
 }
 
+// PlatformSubscriptionStats returns usage attributed to platform subscription quota.
+// GET /api/v1/admin/usage/platform-subscription?user_id=1&date=2026-07-04&timezone=Asia/Shanghai
+func (h *UsageHandler) PlatformSubscriptionStats(c *gin.Context) {
+	if h.usageService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Usage service unavailable")
+		return
+	}
+
+	userIDStr := strings.TrimSpace(c.Query("user_id"))
+	if userIDStr == "" {
+		response.BadRequest(c, "user_id is required")
+		return
+	}
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user_id")
+		return
+	}
+
+	userTZ := strings.TrimSpace(c.Query("timezone"))
+	dateStr := strings.TrimSpace(c.Query("date"))
+	if dateStr == "" {
+		dateStr = timezone.NowInUserLocation(userTZ).Format("2006-01-02")
+	}
+	startTime, err := timezone.ParseInUserLocation("2006-01-02", dateStr, userTZ)
+	if err != nil {
+		response.BadRequest(c, "Invalid date format, use YYYY-MM-DD")
+		return
+	}
+	endTime := startTime.AddDate(0, 0, 1)
+
+	stats, err := h.usageService.GetPlatformSubscriptionUsageStats(c.Request.Context(), userID, startTime, endTime)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, stats)
+}
+
 // SearchUsers handles searching users by email keyword
 // GET /api/v1/admin/usage/search-users
 func (h *UsageHandler) SearchUsers(c *gin.Context) {
