@@ -80,6 +80,20 @@ services:
       - REDIS_ENABLE_TLS=${REDIS_ENABLE_TLS:-false}
 
       # =======================================================================
+      # Gaoge Custom Billing / Payment Bridge
+      # =======================================================================
+      - PLATFORM_SUBSCRIPTION_BILLING_ENABLED=${PLATFORM_SUBSCRIPTION_BILLING_ENABLED:-false}
+      - PLATFORM_SUBSCRIPTION_BILLING_BACKEND_URL=${PLATFORM_SUBSCRIPTION_BILLING_BACKEND_URL:-https://ruanjianhoutai.gaogeaii.com,https://ruanjianhoutai.gaogeaii.cc,https://ruanjianhoutai.jieyouai.it.com}
+      - PLATFORM_SUBSCRIPTION_BILLING_INTERNAL_TOKEN=${PLATFORM_SUBSCRIPTION_BILLING_INTERNAL_TOKEN:-}
+      - PLATFORM_SUBSCRIPTION_BILLING_RULES_TTL_SECONDS=${PLATFORM_SUBSCRIPTION_BILLING_RULES_TTL_SECONDS:-600}
+      - PLATFORM_SUBSCRIPTION_BILLING_USER_TTL_SECONDS=${PLATFORM_SUBSCRIPTION_BILLING_USER_TTL_SECONDS:-120}
+      - PLATFORM_SUBSCRIPTION_BILLING_HTTP_TIMEOUT_SECONDS=${PLATFORM_SUBSCRIPTION_BILLING_HTTP_TIMEOUT_SECONDS:-3}
+      - SOFTWARE_ADMIN_ONLINE_PAYMENT_CONFIG_URL=${SOFTWARE_ADMIN_ONLINE_PAYMENT_CONFIG_URL:-}
+      - SOFTWARE_ADMIN_API_BASE_URL=${SOFTWARE_ADMIN_API_BASE_URL:-https://ruanjianhoutai.jieyouai.it.com}
+      - PAYMENT_BACKUP_BRIDGE_URL=${PAYMENT_BACKUP_BRIDGE_URL:-https://payi.jieyouai.it.com/pay}
+      - PAYMENT_BACKUP_BRIDGE_SECRET=${PAYMENT_BACKUP_BRIDGE_SECRET:-}
+
+      # =======================================================================
       # Admin Account (auto-created on first run)
       # =======================================================================
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@sub2api.local}
