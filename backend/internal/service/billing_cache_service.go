@@ -878,6 +878,21 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 	return nil
 }
 
+func (s *BillingCacheService) minimumBalanceReserve() float64 {
+	if s == nil || s.cfg == nil || s.cfg.Billing.MinimumBalanceReserve <= 0 {
+		return 0
+	}
+	return s.cfg.Billing.MinimumBalanceReserve
+}
+
+func (s *BillingCacheService) balanceBelowEligibilityThreshold(balance float64) bool {
+	if balance <= 0 {
+		return true
+	}
+	minimumReserve := s.minimumBalanceReserve()
+	return minimumReserve > 0 && balance < minimumReserve
+}
+
 func (s *BillingCacheService) resolvePlatformSubscriptionBillingDecision(ctx context.Context, user *User, group *Group, platform string) (*PlatformSubscriptionBillingDecision, bool) {
 	setPlatformSubscriptionDecisionOnContext(ctx, nil)
 	if s == nil || s.platformSubBilling == nil || user == nil {
@@ -934,13 +949,13 @@ func (s *BillingCacheService) checkPlatformSubscriptionEligibility(ctx context.C
 		if remaining > 0 {
 			return nil
 		}
-		if personal > 0 {
+		if !s.balanceBelowEligibilityThreshold(personal) {
 			decision.UseBalance("subscription_exhausted_balance_fallback", balance, personal)
 			return nil
 		}
 		return ErrInsufficientBalance
 	case PlatformSubscriptionActionBalance:
-		if personal > 0 {
+		if !s.balanceBelowEligibilityThreshold(personal) {
 			return nil
 		}
 		return ErrInsufficientBalance
@@ -963,7 +978,7 @@ func (s *BillingCacheService) checkBalanceEligibility(ctx context.Context, userI
 		s.circuitBreaker.OnSuccess()
 	}
 
-	if balance <= 0 {
+	if s.balanceBelowEligibilityThreshold(balance) {
 		return ErrInsufficientBalance
 	}
 
