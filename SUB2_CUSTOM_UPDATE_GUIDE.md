@@ -754,6 +754,7 @@ git reset --hard origin/codex/platform-subscription-billing-v1
 - 已创建本次更新临时分支。
 - 已 `git fetch upstream`。
 - 已合并官方 `upstream/main` 或指定 tag。
+- 如果不是直接从官方 tag 构建，已同步 `backend/cmd/server/VERSION` 到当前官方版本号，避免后台误报“有新版本可用”。
 - 冲突处理后保留支付桥接逻辑。
 - 冲突处理后保留平台订阅扣费规则。
 - `default_action` 仍然是 `subscription`。
