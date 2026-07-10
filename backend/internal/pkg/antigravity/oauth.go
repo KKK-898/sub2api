@@ -188,6 +188,7 @@ type URLAvailability struct {
 	ttl         time.Duration
 	lastSuccess string
 }
+
 // DefaultURLAvailability 闂傚倷鑳堕…鍫㈡崲閸儱绀夌€光偓閸曨剙鍓?URL 闂傚倷绀侀幉锟犳偡椤栫偛鍨傞柟鎯版閺嬩線鏌曢崼婵愭Ц缂佺姵鍨归幉姝岀疀濞戣鲸鏅ｉ梺褰掓？閻掞箓宕戦悩缁樼厱闁斥晛鍠氬▓鏇㈡煟?
 var DefaultURLAvailability = NewURLAvailability(URLAvailabilityTTL)
 

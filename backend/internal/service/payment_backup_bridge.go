@@ -96,7 +96,7 @@ func (s *PaymentService) fetchSoftwareAdminOnlinePaymentConfig(ctx context.Conte
 	if err != nil {
 		return softwareAdminOnlinePaymentConfig{}, infraerrors.ServiceUnavailable("BACKUP_PAYMENT_CONFIG_ERROR", "backup_payment_config_error").WithCause(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -257,6 +257,6 @@ func signBackupPaymentBridgeParams(q url.Values) string {
 		parts = append(parts, key+"="+q.Get(key))
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(strings.Join(parts, "&")))
+	_, _ = mac.Write([]byte(strings.Join(parts, "&")))
 	return hex.EncodeToString(mac.Sum(nil))
 }
