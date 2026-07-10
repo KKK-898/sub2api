@@ -19,10 +19,10 @@ This directory contains files for deploying Sub2API on Linux servers.
 | `.env.example` | Docker environment variables template |
 | `DOCKER.md` | Docker Hub documentation |
 | `install.sh` | One-click binary installation script |
-| `install-datamanagementd.sh` | datamanagementd 一键安装脚本 |
+| `install-datamanagementd.sh` | datamanagementd 一键安装脚�?|
 | `sub2api.service` | Systemd service unit file |
 | `sub2api-datamanagementd.service` | datamanagementd systemd service unit file |
-| `DATAMANAGEMENTD_CN.md` | datamanagementd 部署与联动说明（中文） |
+| `DATAMANAGEMENTD_CN.md` | datamanagementd 部署与联动说明（中文�?|
 | `config.example.yaml` | Example configuration file |
 
 ---
@@ -101,7 +101,7 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 | Version | Data Storage | Migration | Best For |
 |---------|-------------|-----------|----------|
-| **docker-compose.local.yml** | Local directories (./data, ./postgres_data, ./redis_data) | ✅ Easy (tar entire directory) | Production, need frequent backups/migration |
+| **docker-compose.local.yml** | Local directories (./data, ./postgres_data, ./redis_data) | �?Easy (tar entire directory) | Production, need frequent backups/migration |
 | **docker-compose.yml** | Named volumes (/var/lib/docker/volumes/) | ⚠️ Requires docker commands | Simple setup, don't need migration |
 
 **Recommendation:** Use `docker-compose.local.yml` (deployed by `docker-deploy.sh`) for easier data management and migration.
@@ -130,7 +130,7 @@ When using Docker Compose with `AUTO_SETUP=true`:
 - `schema_migrations` tracks applied migrations (filename + checksum).
 - Migrations are forward-only; rollback requires a DB backup restore or a manual compensating SQL script.
 
-**Verify `users.allowed_groups` → `user_allowed_groups` backfill**
+**Verify `users.allowed_groups` �?`user_allowed_groups` backfill**
 
 During the incremental GORM→Ent migration, `users.allowed_groups` (legacy `BIGINT[]`) is being replaced by a normalized join table `user_allowed_groups(user_id, group_id)`.
 
@@ -150,11 +150,9 @@ SELECT
 
 ### datamanagementd（数据管理）联动
 
-如需启用管理后台“数据管理”功能，请额外部署宿主机 `datamanagementd`：
-
-- 主进程固定探测 `/tmp/sub2api-datamanagement.sock`
-- Docker 场景下需把宿主机 Socket 挂载到容器内同路径
-- 详细步骤见：`deploy/DATAMANAGEMENTD_CN.md`
+如需启用管理后台“数据管理”功能，请额外部署宿主机 `datamanagementd`�?
+- 主进程固定探�?`/tmp/sub2api-datamanagement.sock`
+- Docker 场景下需把宿主机 Socket 挂载到容器内同路�?- 详细步骤见：`deploy/DATAMANAGEMENTD_CN.md`
 
 ### Commands
 
@@ -283,24 +281,24 @@ Requires your own OAuth client credentials.
 1. Go to [Google Cloud Console - Credentials](https://console.cloud.google.com/apis/credentials)
 2. Create a new project or select an existing one
 3. **Enable the Generative Language API:**
-   - Go to "APIs & Services" → "Library"
+   - Go to "APIs & Services" �?"Library"
    - Search for "Generative Language API"
    - Click "Enable"
 4. **Configure OAuth Consent Screen** (if not done):
-   - Go to "APIs & Services" → "OAuth consent screen"
+   - Go to "APIs & Services" �?"OAuth consent screen"
    - Choose "External" user type
    - Fill in app name, user support email, developer contact
    - Add scopes: `https://www.googleapis.com/auth/generative-language.retriever` (and optionally `https://www.googleapis.com/auth/cloud-platform`)
    - Add test users (your Google account email)
 5. **Create OAuth 2.0 credentials:**
-   - Go to "APIs & Services" → "Credentials"
-   - Click "Create Credentials" → "OAuth client ID"
+   - Go to "APIs & Services" �?"Credentials"
+   - Click "Create Credentials" �?"OAuth client ID"
    - Application type: **Web application** (or **Desktop app**)
    - Name: e.g., "Sub2API Gemini"
    - Authorized redirect URIs: Add `http://localhost:1455/auth/callback`
 6. Copy the **Client ID** and **Client Secret**
 7. **⚠️ Publish to Production (IMPORTANT):**
-   - Go to "APIs & Services" → "OAuth consent screen"
+   - Go to "APIs & Services" �?"OAuth consent screen"
    - Click "PUBLISH APP" to move from Testing to Production
    - **Testing mode limitations:**
      - Only manually added test users can authenticate (max 100 users)
@@ -313,11 +311,9 @@ Requires your own OAuth client credentials.
 
 ```bash
 GEMINI_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GEMINI_OAUTH_CLIENT_SECRET=GOCSPX-your-client-secret
+GEMINI_OAUTH_CLIENT_SECRET=gaoge-google-oauth-client-secret-placeholder
 
-# 可选：如需使用 Gemini CLI 内置 OAuth Client（Code Assist / Google One）
-# 安全说明：本仓库不会内置该 client_secret，请在运行环境通过环境变量注入。
-# GEMINI_CLI_OAUTH_CLIENT_SECRET=GOCSPX-your-built-in-secret
+# 可选：如需使用 Gemini CLI 内置 OAuth Client（Code Assist / Google One�?# 安全说明：本仓库不会内置�?client_secret，请在运行环境通过环境变量注入�?# GEMINI_CLI_OAUTH_CLIENT_SECRET=gaoge-google-oauth-client-secret-placeholder
 ```
 
 **Step 3: Create Account in Admin UI**
@@ -442,12 +438,12 @@ If you need to use AI Studio OAuth for Gemini accounts, add the OAuth client cre
 2. Add your OAuth credentials in the `[Service]` section (after the existing `Environment=` lines):
    ```ini
    Environment=GEMINI_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
-   Environment=GEMINI_OAUTH_CLIENT_SECRET=GOCSPX-your-client-secret
+   Environment=GEMINI_OAUTH_CLIENT_SECRET=gaoge-google-oauth-client-secret-placeholder
    ```
 
-   如需使用“内置 Gemini CLI OAuth Client”（Code Assist / Google One），还需要注入：
+   如需使用“内�?Gemini CLI OAuth Client”（Code Assist / Google One），还需要注入：
    ```ini
-   Environment=GEMINI_CLI_OAUTH_CLIENT_SECRET=GOCSPX-your-built-in-secret
+   Environment=GEMINI_CLI_OAUTH_CLIENT_SECRET=gaoge-google-oauth-client-secret-placeholder
    ```
 
 3. Reload and restart:

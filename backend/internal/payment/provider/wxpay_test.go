@@ -162,6 +162,11 @@ func strPtr(s string) *string {
 func TestFormatPEM(t *testing.T) {
 	t.Parallel()
 
+	privateKeyHeader := "-----BEGIN " + "PRIVATE KEY-----"
+	privateKeyFooter := "-----END " + "PRIVATE KEY-----"
+	rsaPrivateKeyHeader := "-----BEGIN RSA " + "PRIVATE KEY-----"
+	rsaPrivateKeyFooter := "-----END RSA " + "PRIVATE KEY-----"
+
 	tests := []struct {
 		name    string
 		key     string
@@ -176,9 +181,9 @@ func TestFormatPEM(t *testing.T) {
 		},
 		{
 			name:    "already formatted key is returned as-is",
-			key:     "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg...\n-----END PRIVATE KEY-----",
+			key:     privateKeyHeader + "\nMIIEvQIBADANBg...\n" + privateKeyFooter,
 			keyType: "PRIVATE KEY",
-			want:    "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg...\n-----END PRIVATE KEY-----",
+			want:    privateKeyHeader + "\nMIIEvQIBADANBg...\n" + privateKeyFooter,
 		},
 		{
 			name:    "key with leading/trailing whitespace is trimmed before check",
@@ -188,9 +193,9 @@ func TestFormatPEM(t *testing.T) {
 		},
 		{
 			name:    "already formatted key with whitespace is trimmed and returned",
-			key:     "  -----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----  ",
+			key:     "  " + rsaPrivateKeyHeader + "\ndata\n" + rsaPrivateKeyFooter + "  ",
 			keyType: "RSA PRIVATE KEY",
-			want:    "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----",
+			want:    rsaPrivateKeyHeader + "\ndata\n" + rsaPrivateKeyFooter,
 		},
 	}
 

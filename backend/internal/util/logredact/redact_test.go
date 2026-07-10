@@ -28,7 +28,7 @@ func TestRedactText_QueryLike(t *testing.T) {
 }
 
 func TestRedactText_GOCSPX(t *testing.T) {
-	in := "client_secret=GOCSPX-your-client-secret"
+	in := "client_secret=gaoge-google-oauth-client-secret-placeholder"
 	out := RedactText(in)
 	if strings.Contains(out, "your-client-secret") {
 		t.Fatalf("expected secret redacted, got %q", out)

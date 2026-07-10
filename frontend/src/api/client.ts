@@ -53,6 +53,66 @@ const getUserTimezone = (): string => {
   }
 }
 
+const ADMIN_WRITE_METHODS = new Set(['post', 'put', 'patch', 'delete'])
+
+const getRequestHeader = (headers: InternalAxiosRequestConfig['headers'], name: string): string => {
+  const value = typeof headers.get === 'function'
+    ? headers.get(name)
+    : (headers as Record<string, unknown>)[name]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+const setRequestHeader = (
+  headers: InternalAxiosRequestConfig['headers'],
+  name: string,
+  value: string
+): void => {
+  if (typeof headers.set === 'function') {
+    headers.set(name, value)
+    return
+  }
+  const headerRecord = headers as Record<string, string>
+  headerRecord[name] = value
+}
+
+const generateIdempotencyKey = (): string => {
+  const randomUUID = globalThis.crypto?.randomUUID?.()
+  if (randomUUID) {
+    return `admin-${randomUUID}`
+  }
+
+  const random = Math.random().toString(36).slice(2, 12)
+  return `admin-${Date.now().toString(36)}-${random}`
+}
+
+const isAdminWriteRequest = (config: InternalAxiosRequestConfig): boolean => {
+  const method = String(config.method || 'get').toLowerCase()
+  if (!ADMIN_WRITE_METHODS.has(method)) {
+    return false
+  }
+
+  const rawUrl = String(config.url || '')
+  const path = rawUrl.replace(/^https?:\/\/[^/]+/i, '')
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+
+  return normalizedPath === '/admin' ||
+    normalizedPath.startsWith('/admin/') ||
+    /^\/api\/v\d+\/admin(?:\/|$)/.test(normalizedPath)
+}
+
+const attachAdminWriteIdempotencyKey = (config: InternalAxiosRequestConfig): void => {
+  if (!config.headers || !isAdminWriteRequest(config)) {
+    return
+  }
+
+  const existingKey = getRequestHeader(config.headers, 'Idempotency-Key') ||
+    getRequestHeader(config.headers, 'X-Idempotency-Key') ||
+    generateIdempotencyKey()
+
+  setRequestHeader(config.headers, 'Idempotency-Key', existingKey)
+  setRequestHeader(config.headers, 'X-Idempotency-Key', existingKey)
+}
+
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     // Attach token from localStorage
@@ -73,6 +133,8 @@ apiClient.interceptors.request.use(
       }
       config.params.timezone = getUserTimezone()
     }
+
+    attachAdminWriteIdempotencyKey(config)
 
     return config
   },
@@ -205,7 +267,9 @@ apiClient.interceptors.response.use(
             const refreshResponse = await axios.post(
               `${getAPIBaseURL()}/auth/refresh`,
               { refresh_token: refreshToken },
-              { headers: { 'Content-Type': 'application/json' } }
+              // 显式设置超时：裸 axios 默认无限等待，若刷新请求挂起会导致 isRefreshing
+              // 永远为 true，所有排队的 401 重试请求永久卡死，页面 loading 无法恢复。
+              { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
             )
 
             const refreshData = refreshResponse.data as ApiResponse<{

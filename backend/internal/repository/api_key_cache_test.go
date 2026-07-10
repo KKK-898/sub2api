@@ -3,9 +3,13 @@
 package repository
 
 import (
+	"context"
 	"math"
 	"testing"
+	"time"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,4 +47,36 @@ func TestApiKeyRateLimitKey(t *testing.T) {
 			require.Equal(t, tc.expected, got)
 		})
 	}
+}
+
+func TestAPIKeyCache_DeleteAuthCachesAndPublish(t *testing.T) {
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	cache := &apiKeyCache{rdb: rdb}
+
+	for _, cacheKey := range []string{"hash-1", "hash-2"} {
+		require.NoError(t, rdb.Set(ctx, apiKeyAuthCacheKey(cacheKey), "snapshot", time.Minute).Err())
+	}
+	subscriber := rdb.Subscribe(ctx, authCacheInvalidateChannel)
+	_, err := subscriber.Receive(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = subscriber.Close() })
+
+	require.NoError(t, cache.DeleteAuthCachesAndPublish(ctx, []string{"hash-1", "", "hash-2"}))
+	require.False(t, mr.Exists(apiKeyAuthCacheKey("hash-1")))
+	require.False(t, mr.Exists(apiKeyAuthCacheKey("hash-2")))
+
+	received := make([]string, 0, 2)
+	timeout := time.After(time.Second)
+	for len(received) < 2 {
+		select {
+		case message := <-subscriber.Channel():
+			received = append(received, message.Payload)
+		case <-timeout:
+			t.Fatal("timed out waiting for batched auth cache invalidations")
+		}
+	}
+	require.ElementsMatch(t, []string{"hash-1", "hash-2"}, received)
 }

@@ -99,7 +99,7 @@ gaoge-sub2api:platform-subscription-eligibility-fix-20260704-083710
 SUB2 拉取软件后台内部接口时支持多个后台地址，当前配置为：
 
 ```bash
-https://ruanjianhoutai.gaogeaii.com,https://ruanjianhoutai.gaogeaii.cc,https://ruanjianhoutai.jieyouai.it.com
+${ADMIN_PUBLIC_URL}
 ```
 
 如果第一个域名异常，会继续尝试后面的域名。
@@ -146,16 +146,22 @@ done
 
 ```bash
 PLATFORM_SUBSCRIPTION_BILLING_ENABLED=true
-PLATFORM_SUBSCRIPTION_BILLING_BACKEND_URL=https://ruanjianhoutai.gaogeaii.com,https://ruanjianhoutai.gaogeaii.cc,https://ruanjianhoutai.jieyouai.it.com
+PLATFORM_SUBSCRIPTION_BILLING_BACKEND_URL=${ADMIN_PUBLIC_URL}
 PLATFORM_SUBSCRIPTION_BILLING_INTERNAL_TOKEN=<不要写入文档或提交>
 PLATFORM_SUBSCRIPTION_BILLING_RULES_TTL_SECONDS=600
 PLATFORM_SUBSCRIPTION_BILLING_USER_TTL_SECONDS=120
 PLATFORM_SUBSCRIPTION_BILLING_HTTP_TIMEOUT_SECONDS=3
+
+SOFTWARE_ADMIN_ONLINE_PAYMENT_CONFIG_URL=
+SOFTWARE_ADMIN_API_BASE_URL=${ADMIN_PUBLIC_URL}/api
+PAYMENT_BACKUP_BRIDGE_URL=${PAY_PUBLIC_URL}/pay
+PAYMENT_BACKUP_BRIDGE_SECRET=<不要写入文档或提交>
 ```
 
 注意：
 
 - `INTERNAL_TOKEN` 只能保存在服务器 `.env` 或软件后台配置中。
+- `PAYMENT_BACKUP_BRIDGE_SECRET` 只能保存在服务器 `.env` 或软件后台配置中。
 - 不要提交 token、数据库密码、JWT 密钥、支付密钥。
 
 ## 3. 当前自定义代码文件
@@ -462,7 +468,7 @@ go test ./internal/repository
 ```bash
 cd /opt/sub2api/source
 STAMP=$(date +%Y%m%d-%H%M%S)
-OFFICIAL_VERSION="0.1.144"
+OFFICIAL_VERSION="0.1.150"
 IMAGE="gaoge-sub2api:v${OFFICIAL_VERSION}-platform-subscription-$STAMP"
 
 docker build \
@@ -476,10 +482,12 @@ docker build \
 
 注意：
 
-- `VERSION` 必须使用纯官方版本号，例如 `0.1.144`。
-- 不要写成 `v0.1.144`，否则前端会显示成 `vv0.1.144`。
-- 不要写成 `0.1.144-gaoge` 或 `v0.1.144-gaoge`，否则后台更新检查可能把自定义后缀误判为还有官方更新。
-- 自定义标记放在 Docker 镜像名里，例如 `gaoge-sub2api:v0.1.144-platform-subscription-20260704-091535`。
+- `VERSION` 必须使用纯官方版本号，例如 `0.1.150`。
+- 不要写成 `v0.1.150`，否则前端会显示成 `vv0.1.150`。
+- 不要写成 `0.1.150-gaoge` 或 `v0.1.150-gaoge`。
+- 自定义标记放在 Docker 镜像名里，例如 `gaoge-sub2api:v0.1.150-platform-subscription-20260710-091535`。
+- 自定义构建必须使用 `BuildType=custom`，后台官方在线更新和回滚接口必须返回 `SELF_UPDATE_DISABLED`。
+- 管理后台不得展示官方镜像或官方回滚命令；自定义版本只能通过中转仓库、主仓库和自定义镜像发布流程更新。
 
 构建成功后再切换容器。不要在构建失败时停止旧容器。
 
@@ -576,9 +584,7 @@ curl -sS -m 8 \
 ```bash
 docker exec -e TOKEN="$TOKEN" sub2api sh -lc '
 for url in \
-  https://ruanjianhoutai.gaogeaii.com \
-  https://ruanjianhoutai.gaogeaii.cc \
-  https://ruanjianhoutai.jieyouai.it.com
+  "${ADMIN_PUBLIC_URL}"
 do
   echo "$url"
   wget -q -T 8 --header="Authorization: Bearer $TOKEN" \
@@ -748,6 +754,8 @@ git reset --hard origin/codex/platform-subscription-billing-v1
 - 已创建本次更新临时分支。
 - 已 `git fetch upstream`。
 - 已合并官方 `upstream/main` 或指定 tag。
+- 如果不是直接从官方 tag 构建，已同步 `backend/cmd/server/VERSION` 到当前官方版本号，避免后台误报“有新版本可用”。
+- Docker 和 GoReleaser 构建均使用 `BuildType=custom`，更新与回滚 API 返回 `SELF_UPDATE_DISABLED`。
 - 冲突处理后保留支付桥接逻辑。
 - 冲突处理后保留平台订阅扣费规则。
 - `default_action` 仍然是 `subscription`。

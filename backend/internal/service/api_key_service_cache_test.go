@@ -129,6 +129,17 @@ type authCacheStub struct {
 	deleteAuthKeys []string
 }
 
+type batchAuthCacheStub struct {
+	authCacheStub
+	batchCacheKeys [][]string
+	batchErr       error
+}
+
+func (s *batchAuthCacheStub) DeleteAuthCachesAndPublish(_ context.Context, cacheKeys []string) error {
+	s.batchCacheKeys = append(s.batchCacheKeys, append([]string(nil), cacheKeys...))
+	return s.batchErr
+}
+
 func (s *authCacheStub) GetCreateAttemptCount(ctx context.Context, userID int64) (int, error) {
 	return 0, nil
 }
@@ -249,14 +260,15 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesMessagesDispatchModelConfig(t 
 			Concurrency: 3,
 		},
 		Group: &Group{
-			ID:                    groupID,
-			Name:                  "openai",
-			Platform:              PlatformOpenAI,
-			Status:                StatusActive,
-			SubscriptionType:      SubscriptionTypeStandard,
-			RateMultiplier:        1,
-			AllowMessagesDispatch: true,
-			DefaultMappedModel:    "gpt-5.4",
+			ID:                            groupID,
+			Name:                          "openai",
+			Platform:                      PlatformOpenAI,
+			Status:                        StatusActive,
+			SubscriptionType:              SubscriptionTypeStandard,
+			RateMultiplier:                1,
+			StripCodexImageGenerationTool: true,
+			AllowMessagesDispatch:         true,
+			DefaultMappedModel:            "gpt-5.4",
 			MessagesDispatchModelConfig: OpenAIMessagesDispatchModelConfig{
 				OpusMappedModel:   "gpt-5.4-nano",
 				SonnetMappedModel: "gpt-5.3-codex",
@@ -274,6 +286,7 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesMessagesDispatchModelConfig(t 
 	require.NotNil(t, roundTrip)
 	require.Equal(t, apiKey.Name, roundTrip.Name)
 	require.NotNil(t, roundTrip.Group)
+	require.True(t, roundTrip.Group.StripCodexImageGenerationTool)
 	require.Equal(t, apiKey.Group.MessagesDispatchModelConfig, roundTrip.Group.MessagesDispatchModelConfig)
 }
 
@@ -488,6 +501,26 @@ func TestAPIKeyService_InvalidateAuthCacheByGroupID(t *testing.T) {
 
 	svc.InvalidateAuthCacheByGroupID(context.Background(), 9)
 	require.Len(t, cache.deleteAuthKeys, 2)
+}
+
+func TestAPIKeyService_InvalidateAuthCacheByGroupID_UsesBatchCache(t *testing.T) {
+	cache := &batchAuthCacheStub{}
+	repo := &authRepoStub{
+		listKeysByGroupID: func(ctx context.Context, groupID int64) ([]string, error) {
+			return []string{"k1", "", "k2"}, nil
+		},
+	}
+	cfg := &config.Config{
+		APIKeyAuth: config.APIKeyAuthCacheConfig{
+			L2TTLSeconds: 60,
+		},
+	}
+	svc := NewAPIKeyService(repo, nil, nil, nil, nil, cache, cfg)
+
+	svc.InvalidateAuthCacheByGroupID(context.Background(), 9)
+	require.Len(t, cache.batchCacheKeys, 1)
+	require.ElementsMatch(t, []string{svc.authCacheKey("k1"), svc.authCacheKey("k2")}, cache.batchCacheKeys[0])
+	require.Empty(t, cache.deleteAuthKeys)
 }
 
 func TestAPIKeyService_InvalidateAuthCacheByKey(t *testing.T) {

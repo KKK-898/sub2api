@@ -22,10 +22,8 @@ import (
 )
 
 const (
-	paymentBackupModeMain       = "main"
-	paymentBackupModeBackup     = "backup"
-	paymentBackupBridgeBaseURL  = "https://pay.gaogeai.cloud/pay"
-	paymentBackupAdminConfigURL = "https://ruanjianhoutai.gaogeai.cloud/api/v1/desktop/online-payment/config"
+	paymentBackupModeMain   = "main"
+	paymentBackupModeBackup = "backup"
 )
 
 type softwareAdminOnlinePaymentConfig struct {
@@ -76,10 +74,15 @@ func (s *PaymentService) fetchSoftwareAdminOnlinePaymentConfig(ctx context.Conte
 		if base == "" {
 			base = strings.TrimRight(strings.TrimSpace(os.Getenv("VITE_GAOGE_SOFTWARE_ADMIN_API_BASE_URL")), "/")
 		}
+		if base == "" {
+			if adminURL := derivedPublicURL("ADMIN_PUBLIC_URL", "ADMIN_PUBLIC_DOMAIN", "ruanjianhoutai"); adminURL != "" {
+				base = strings.TrimRight(adminURL, "/") + "/api"
+			}
+		}
 		if base != "" {
 			endpoint = base + "/v1/desktop/online-payment/config"
 		} else {
-			endpoint = paymentBackupAdminConfigURL
+			return softwareAdminOnlinePaymentConfig{}, infraerrors.ServiceUnavailable("BACKUP_PAYMENT_CONFIG_ERROR", "software_admin_config_url_missing")
 		}
 	}
 
@@ -93,7 +96,7 @@ func (s *PaymentService) fetchSoftwareAdminOnlinePaymentConfig(ctx context.Conte
 	if err != nil {
 		return softwareAdminOnlinePaymentConfig{}, infraerrors.ServiceUnavailable("BACKUP_PAYMENT_CONFIG_ERROR", "backup_payment_config_error").WithCause(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -160,7 +163,9 @@ func (s *PaymentService) invokeBackupPaymentBridge(ctx context.Context, order *d
 func buildBackupPaymentBridgeURL(order *dbent.PaymentOrder, req CreateOrderRequest, payAmount float64) (string, error) {
 	baseURL := strings.TrimSpace(os.Getenv("PAYMENT_BACKUP_BRIDGE_URL"))
 	if baseURL == "" {
-		baseURL = paymentBackupBridgeBaseURL
+		if payURL := derivedPublicURL("PAY_PUBLIC_URL", "PAY_PUBLIC_DOMAIN", "pay"); payURL != "" {
+			baseURL = strings.TrimRight(payURL, "/") + "/pay"
+		}
 	}
 	u, err := url.Parse(baseURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
@@ -178,6 +183,47 @@ func buildBackupPaymentBridgeURL(order *dbent.PaymentOrder, req CreateOrderReque
 	q.Set("sign", signBackupPaymentBridgeParams(q))
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+func derivedPublicURL(urlEnv string, domainEnv string, prefix string) string {
+	if value := strings.TrimRight(strings.TrimSpace(os.Getenv(urlEnv)), "/"); value != "" {
+		return value
+	}
+
+	domain := normalizePublicDomain(os.Getenv(domainEnv))
+	if domain == "" {
+		root := normalizePublicDomain(os.Getenv("ROOT_DOMAIN"))
+		if root == "" {
+			root = "localhost"
+		}
+		if root == "localhost" {
+			domain = prefix + ".localhost"
+		} else {
+			domain = prefix + "." + root
+		}
+	}
+	if domain == "" {
+		return ""
+	}
+
+	scheme := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(os.Getenv("PUBLIC_SCHEME"))), ":")
+	if scheme != "http" && scheme != "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + domain
+}
+
+func normalizePublicDomain(value string) string {
+	domain := strings.TrimSpace(value)
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	if slash := strings.Index(domain, "/"); slash >= 0 {
+		domain = domain[:slash]
+	}
+	domain = strings.TrimSuffix(domain, ":443")
+	domain = strings.TrimSuffix(domain, ":80")
+	domain = strings.Trim(domain, ".")
+	return strings.ToLower(domain)
 }
 
 func backupPaymentPlanID(amount float64) string {
@@ -211,6 +257,6 @@ func signBackupPaymentBridgeParams(q url.Values) string {
 		parts = append(parts, key+"="+q.Get(key))
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(strings.Join(parts, "&")))
+	_, _ = mac.Write([]byte(strings.Join(parts, "&")))
 	return hex.EncodeToString(mac.Sum(nil))
 }

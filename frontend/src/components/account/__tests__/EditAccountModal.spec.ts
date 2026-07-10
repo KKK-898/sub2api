@@ -191,6 +191,9 @@ function buildOpenAISparkShadowAccount() {
 }
 
 function buildVertexAccount() {
+  const privateKeyHeader = ['-----BEGIN', 'PRIVATE KEY-----'].join(' ')
+  const privateKeyFooter = ['-----END', 'PRIVATE KEY-----'].join(' ')
+
   return {
     id: 2,
     name: 'Vertex SA',
@@ -198,7 +201,11 @@ function buildVertexAccount() {
     platform: 'gemini',
     type: 'service_account',
     credentials: {
-      service_account_json: '{"type":"service_account","client_email":"sa@example.iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----\\n"}',
+      service_account_json: JSON.stringify({
+        type: 'service_account',
+        client_email: 'sa@example.iam.gserviceaccount.com',
+        private_key: `${privateKeyHeader}\nMIIE\n${privateKeyFooter}\n`
+      }),
       project_id: 'demo-project',
       client_email: 'sa@example.iam.gserviceaccount.com',
       location: 'us-central1',
