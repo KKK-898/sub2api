@@ -228,3 +228,86 @@ func TestOpenAIGatewayHandlerResponses_TextOnlyNotRejectedByImageConcurrency(t *
 	require.NotEqual(t, http.StatusTooManyRequests, rec.Code)
 	require.NotContains(t, rec.Body.String(), "Image generation concurrency limit exceeded")
 }
+
+func TestOpenAIGatewayHandlerResponses_GroupStripBypassesRawToolGateAndImageConcurrency(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := `{"model":"gpt-5.4","input":"write code","tools":[{"type":"function","name":"shell"},{"type":"image_generation"}],"tool_choice":{"type":"image_generation"}}`
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+	groupID := int64(1)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		ID:      10,
+		GroupID: &groupID,
+		Group: &service.Group{
+			ID:                            groupID,
+			Platform:                      service.PlatformOpenAI,
+			AllowImageGeneration:          false,
+			StripCodexImageGenerationTool: true,
+		},
+		User: &service.User{ID: 20},
+	})
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 20, Concurrency: 1})
+
+	h := &OpenAIGatewayHandler{
+		gatewayService:      &service.OpenAIGatewayService{},
+		billingCacheService: service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, &config.Config{RunMode: config.RunModeSimple}, nil),
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   &ConcurrencyHelper{concurrencyService: service.NewConcurrencyService(&helperConcurrencyCacheStub{userSeq: []bool{true}})},
+		cfg: &config.Config{Gateway: config.GatewayConfig{ImageConcurrency: config.ImageConcurrencyConfig{
+			Enabled:               true,
+			MaxConcurrentRequests: 1,
+			OverflowMode:          config.ImageConcurrencyOverflowModeReject,
+		}}},
+		imageLimiter: &imageConcurrencyLimiter{},
+	}
+	release, acquired := h.acquireImageGenerationSlot(c, false)
+	require.True(t, acquired)
+	require.NotNil(t, release)
+	defer release()
+	rec.Body.Reset()
+	rec.Code = 0
+
+	h.Responses(c)
+
+	require.NotEqual(t, http.StatusForbidden, rec.Code)
+	require.NotEqual(t, http.StatusTooManyRequests, rec.Code)
+	require.NotContains(t, rec.Body.String(), service.ImageGenerationPermissionMessage())
+	require.NotContains(t, rec.Body.String(), "Image generation concurrency limit exceeded")
+}
+
+func TestOpenAIGatewayHandlerResponses_GroupStripStillBlocksImageModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := `{"model":"gpt-image-2","input":"draw"}`
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+	groupID := int64(1)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		ID:      10,
+		GroupID: &groupID,
+		Group: &service.Group{
+			ID:                            groupID,
+			Platform:                      service.PlatformOpenAI,
+			AllowImageGeneration:          false,
+			StripCodexImageGenerationTool: true,
+		},
+		User: &service.User{ID: 20},
+	})
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 20, Concurrency: 1})
+
+	h := &OpenAIGatewayHandler{
+		gatewayService:      &service.OpenAIGatewayService{},
+		billingCacheService: service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, &config.Config{RunMode: config.RunModeSimple}, nil),
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   &ConcurrencyHelper{concurrencyService: service.NewConcurrencyService(&helperConcurrencyCacheStub{userSeq: []bool{true}})},
+		cfg:                 &config.Config{},
+		imageLimiter:        &imageConcurrencyLimiter{},
+	}
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "permission_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Contains(t, rec.Body.String(), service.ImageGenerationPermissionMessage())
+}

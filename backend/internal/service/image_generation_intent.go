@@ -28,6 +28,23 @@ func GroupStripsCodexImageGenerationTool(group *Group) bool {
 	return group != nil && group.Platform == PlatformOpenAI && group.StripCodexImageGenerationTool
 }
 
+// IsImageGenerationIntentForGroupGate classifies the request as it will look
+// after the matched group's image-tool strip policy has run. Handler-level
+// permission, scheduling, and concurrency checks must use this view so they do
+// not reject an otherwise text-only request before the service can strip tools.
+func IsImageGenerationIntentForGroupGate(endpoint string, requestedModel string, body []byte, group *Group) bool {
+	if !GroupStripsCodexImageGenerationTool(group) {
+		return IsImageGenerationIntent(endpoint, requestedModel, body)
+	}
+	if IsImageGenerationEndpoint(endpoint) || isOpenAIImageGenerationModel(requestedModel) {
+		return true
+	}
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return false
+	}
+	return isOpenAIImageGenerationModel(strings.TrimSpace(gjson.GetBytes(body, "model").String()))
+}
+
 // IsImageGenerationIntent classifies requests that can produce generated images.
 func IsImageGenerationIntent(endpoint string, requestedModel string, body []byte) bool {
 	if IsImageGenerationEndpoint(endpoint) {

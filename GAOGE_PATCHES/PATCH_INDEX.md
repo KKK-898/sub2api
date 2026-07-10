@@ -16,6 +16,7 @@ This directory records all Gaoge custom patches applied on top of official sub2.
 - `010-image-tool-strip-gate-precedence.md`: evaluates image permissions after effective image-tool stripping across HTTP, passthrough, and WebSocket flows.
 - `011-custom-build-self-update-guard.md`: blocks official in-place update and rollback paths in custom images.
 - `012-codex-model-manifest-token-selection.md`: Gaoge-only compatibility selector for live Codex manifests; not an official Sub2API fix.
+- `013-openai-handler-image-strip-preflight.md`: group-aware Handler preflight, concurrency, scheduler, and WebSocket image-intent classification.
 
 ## Update Rule
 
