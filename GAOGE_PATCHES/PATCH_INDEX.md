@@ -13,6 +13,7 @@ This directory records all Gaoge custom patches applied on top of official sub2.
 - `007-internal-backend-allowlist.md`: backend internal API allowlist and failover domains.
 - `008-openai-group-image-tool-stripping.md`: group-scoped Codex/Responses image-tool stripping and image-gate ordering.
 - `009-group-auth-cache-invalidation-batching.md`: batched Redis invalidation for large-group admin updates.
+- `010-custom-build-self-update-guard.md`: blocks official in-place update and rollback paths in custom images.
 
 ## Update Rule
 

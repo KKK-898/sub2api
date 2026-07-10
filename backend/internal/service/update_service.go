@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +23,9 @@ import (
 )
 
 var (
-	ErrNoUpdateAvailable = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
+	ErrNoUpdateAvailable         = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
+	ErrRollbackVersionNotAllowed = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
+	ErrSelfUpdateDisabled        = infraerrors.Forbidden("SELF_UPDATE_DISABLED", "custom image updates are managed through the internal release process")
 )
 
 const (
@@ -36,6 +39,12 @@ const (
 
 	// Security: max download size (500MB)
 	maxDownloadSize = 500 * 1024 * 1024
+
+	// Rollback: expose at most the 3 most recent versions older than current
+	maxRollbackVersions = 3
+	// Fetch a few extra releases so filtering (current/newer/prerelease) still leaves enough candidates
+	rollbackFetchPageSize = 15
+	customBuildType       = "custom"
 )
 
 // UpdateCache defines cache operations for update service
@@ -47,6 +56,7 @@ type UpdateCache interface {
 // GitHubReleaseClient 获取 GitHub release 信息的接口
 type GitHubReleaseClient interface {
 	FetchLatestRelease(ctx context.Context, repo string) (*GitHubRelease, error)
+	FetchRecentReleases(ctx context.Context, repo string, perPage int) ([]*GitHubRelease, error)
 	DownloadFile(ctx context.Context, url, dest string, maxSize int64) error
 	FetchChecksumFile(ctx context.Context, url string) ([]byte, error)
 }
@@ -56,7 +66,7 @@ type UpdateService struct {
 	cache          UpdateCache
 	githubClient   GitHubReleaseClient
 	currentVersion string
-	buildType      string // "source" for manual builds, "release" for CI builds
+	buildType      string // "source", "release", or "custom"
 }
 
 // NewUpdateService creates a new UpdateService
@@ -71,13 +81,14 @@ func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, versi
 
 // UpdateInfo contains update information
 type UpdateInfo struct {
-	CurrentVersion string       `json:"current_version"`
-	LatestVersion  string       `json:"latest_version"`
-	HasUpdate      bool         `json:"has_update"`
-	ReleaseInfo    *ReleaseInfo `json:"release_info,omitempty"`
-	Cached         bool         `json:"cached"`
-	Warning        string       `json:"warning,omitempty"`
-	BuildType      string       `json:"build_type"` // "source" or "release"
+	CurrentVersion    string       `json:"current_version"`
+	LatestVersion     string       `json:"latest_version"`
+	HasUpdate         bool         `json:"has_update"`
+	ReleaseInfo       *ReleaseInfo `json:"release_info,omitempty"`
+	Cached            bool         `json:"cached"`
+	Warning           string       `json:"warning,omitempty"`
+	BuildType         string       `json:"build_type"` // "source", "release", or "custom"
+	SelfUpdateEnabled bool         `json:"self_update_enabled"`
 }
 
 // ReleaseInfo contains GitHub release details
@@ -103,7 +114,16 @@ type GitHubRelease struct {
 	Body        string        `json:"body"`
 	PublishedAt string        `json:"published_at"`
 	HTMLURL     string        `json:"html_url"`
+	Draft       bool          `json:"draft"`
+	Prerelease  bool          `json:"prerelease"`
 	Assets      []GitHubAsset `json:"assets"`
+}
+
+// RollbackVersion describes a release version the system can roll back to
+type RollbackVersion struct {
+	Version     string `json:"version"` // without "v" prefix, e.g. "0.1.146"
+	PublishedAt string `json:"published_at"`
+	HTMLURL     string `json:"html_url"`
 }
 
 type GitHubAsset struct {
@@ -114,6 +134,17 @@ type GitHubAsset struct {
 
 // CheckUpdate checks for available updates
 func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInfo, error) {
+	if !s.selfUpdateEnabled() {
+		return &UpdateInfo{
+			CurrentVersion:    s.currentVersion,
+			LatestVersion:     s.currentVersion,
+			HasUpdate:         false,
+			Cached:            false,
+			BuildType:         s.buildType,
+			SelfUpdateEnabled: false,
+		}, nil
+	}
+
 	// Try cache first
 	if !force {
 		if cached, err := s.getFromCache(ctx); err == nil && cached != nil {
@@ -130,11 +161,12 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 			return cached, nil
 		}
 		return &UpdateInfo{
-			CurrentVersion: s.currentVersion,
-			LatestVersion:  s.currentVersion,
-			HasUpdate:      false,
-			Warning:        err.Error(),
-			BuildType:      s.buildType,
+			CurrentVersion:    s.currentVersion,
+			LatestVersion:     s.currentVersion,
+			HasUpdate:         false,
+			Warning:           err.Error(),
+			BuildType:         s.buildType,
+			SelfUpdateEnabled: true,
 		}, nil
 	}
 
@@ -146,6 +178,10 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 // PerformUpdate downloads and applies the update
 // Uses atomic file replacement pattern for safe in-place updates
 func (s *UpdateService) PerformUpdate(ctx context.Context) error {
+	if !s.selfUpdateEnabled() {
+		return ErrSelfUpdateDisabled
+	}
+
 	info, err := s.CheckUpdate(ctx, true)
 	if err != nil {
 		return err
@@ -155,12 +191,23 @@ func (s *UpdateService) PerformUpdate(ctx context.Context) error {
 		return ErrNoUpdateAvailable
 	}
 
+	return s.applyReleaseAssets(ctx, info.ReleaseInfo.Assets)
+}
+
+// applyReleaseAssets downloads the platform archive from the given release assets,
+// verifies its checksum, and atomically swaps the running binary.
+// Shared by PerformUpdate (latest) and RollbackToVersion (specific older version).
+func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []Asset) error {
+	if !s.selfUpdateEnabled() {
+		return ErrSelfUpdateDisabled
+	}
+
 	// Find matching archive and checksum for current platform
 	archiveName := s.getArchiveName()
 	var downloadURL string
 	var checksumURL string
 
-	for _, asset := range info.ReleaseInfo.Assets {
+	for _, asset := range releaseAssets {
 		if strings.Contains(asset.Name, archiveName) && !strings.HasSuffix(asset.Name, ".txt") {
 			downloadURL = asset.DownloadURL
 		}
@@ -257,6 +304,10 @@ func (s *UpdateService) PerformUpdate(ctx context.Context) error {
 
 // Rollback restores the previous version
 func (s *UpdateService) Rollback() error {
+	if !s.selfUpdateEnabled() {
+		return ErrSelfUpdateDisabled
+	}
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -279,6 +330,110 @@ func (s *UpdateService) Rollback() error {
 	return nil
 }
 
+// ListRollbackVersions returns up to maxRollbackVersions release versions that are
+// strictly older than the current version (the current version itself is excluded),
+// newest first. Draft and prerelease entries are skipped.
+func (s *UpdateService) ListRollbackVersions(ctx context.Context) ([]RollbackVersion, error) {
+	if !s.selfUpdateEnabled() {
+		return nil, ErrSelfUpdateDisabled
+	}
+
+	releases, err := s.fetchRollbackCandidates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	versions := make([]RollbackVersion, 0, len(releases))
+	for _, r := range releases {
+		versions = append(versions, RollbackVersion{
+			Version:     strings.TrimPrefix(r.TagName, "v"),
+			PublishedAt: r.PublishedAt,
+			HTMLURL:     r.HTMLURL,
+		})
+	}
+	return versions, nil
+}
+
+// RollbackToVersion downloads and installs a specific older version.
+// The target must be one of the versions returned by ListRollbackVersions;
+// anything else (including the current version) is rejected.
+func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) error {
+	if !s.selfUpdateEnabled() {
+		return ErrSelfUpdateDisabled
+	}
+
+	target := strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if target == "" {
+		return ErrRollbackVersionNotAllowed
+	}
+
+	releases, err := s.fetchRollbackCandidates(ctx)
+	if err != nil {
+		return err
+	}
+
+	var match *GitHubRelease
+	for _, r := range releases {
+		if strings.TrimPrefix(r.TagName, "v") == target {
+			match = r
+			break
+		}
+	}
+	if match == nil {
+		return ErrRollbackVersionNotAllowed
+	}
+
+	assets := make([]Asset, len(match.Assets))
+	for i, a := range match.Assets {
+		assets[i] = Asset{
+			Name:        a.Name,
+			DownloadURL: a.BrowserDownloadURL,
+			Size:        a.Size,
+		}
+	}
+
+	return s.applyReleaseAssets(ctx, assets)
+}
+
+// fetchRollbackCandidates fetches recent releases and keeps the newest
+// maxRollbackVersions entries strictly older than the current version.
+func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubRelease, error) {
+	releases, err := s.githubClient.FetchRecentReleases(ctx, githubRepo, rollbackFetchPageSize)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool, len(releases))
+	candidates := make([]*GitHubRelease, 0, maxRollbackVersions)
+	for _, r := range releases {
+		if r == nil || r.Draft || r.Prerelease {
+			continue
+		}
+		v := strings.TrimPrefix(r.TagName, "v")
+		if v == "" || seen[v] {
+			continue
+		}
+		// Only versions strictly older than current (also excludes current itself)
+		if compareVersions(v, s.currentVersion) >= 0 {
+			continue
+		}
+		seen[v] = true
+		candidates = append(candidates, r)
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return compareVersions(
+			strings.TrimPrefix(candidates[i].TagName, "v"),
+			strings.TrimPrefix(candidates[j].TagName, "v"),
+		) > 0
+	})
+
+	if len(candidates) > maxRollbackVersions {
+		candidates = candidates[:maxRollbackVersions]
+	}
+	return candidates, nil
+}
+
 func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, error) {
 	release, err := s.githubClient.FetchLatestRelease(ctx, githubRepo)
 	if err != nil {
@@ -297,9 +452,10 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 	}
 
 	return &UpdateInfo{
-		CurrentVersion: s.currentVersion,
-		LatestVersion:  latestVersion,
-		HasUpdate:      compareVersions(s.currentVersion, latestVersion) < 0,
+		CurrentVersion:    s.currentVersion,
+		LatestVersion:     latestVersion,
+		HasUpdate:         compareVersions(s.currentVersion, latestVersion) < 0,
+		SelfUpdateEnabled: true,
 		ReleaseInfo: &ReleaseInfo{
 			Name:        release.Name,
 			Body:        release.Body,
@@ -310,6 +466,10 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 		Cached:    false,
 		BuildType: s.buildType,
 	}, nil
+}
+
+func (s *UpdateService) selfUpdateEnabled() bool {
+	return s.buildType != customBuildType
 }
 
 func (s *UpdateService) downloadFile(ctx context.Context, downloadURL, dest string) error {
@@ -493,12 +653,13 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	}
 
 	return &UpdateInfo{
-		CurrentVersion: s.currentVersion,
-		LatestVersion:  cached.Latest,
-		HasUpdate:      compareVersions(s.currentVersion, cached.Latest) < 0,
-		ReleaseInfo:    cached.ReleaseInfo,
-		Cached:         true,
-		BuildType:      s.buildType,
+		CurrentVersion:    s.currentVersion,
+		LatestVersion:     cached.Latest,
+		HasUpdate:         compareVersions(s.currentVersion, cached.Latest) < 0,
+		ReleaseInfo:       cached.ReleaseInfo,
+		Cached:            true,
+		BuildType:         s.buildType,
+		SelfUpdateEnabled: true,
 	}, nil
 }
 
