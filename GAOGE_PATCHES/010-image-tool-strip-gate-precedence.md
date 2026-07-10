@@ -17,6 +17,7 @@ Prevent a text-only OpenAI group from returning a false 403 when a client automa
 - A client-advertised or client-selected image tool therefore becomes a normal text request in a group configured with `allow_image_generation=false` and `strip_codex_image_generation_tool=true`.
 - Dedicated image endpoints and explicit image models remain hard-blocked locally with HTTP 403 and never reach upstream.
 - Standard Responses HTTP, OpenAI passthrough, and Responses WebSocket ingress use the same post-strip classification rule.
+- Handler preflight, image-concurrency classification, and scheduler intent use the group-aware effective request view described by patch 013.
 - The behavior remains scoped to the API key's matched OpenAI group; groups without the strip flag and other platforms are unchanged.
 
 ## Compatibility Note

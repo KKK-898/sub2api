@@ -79,6 +79,86 @@ func TestOpenAIGatewayServiceForward_DisabledGroupAllowsTextOnlyResponses(t *tes
 	require.NotNil(t, upstream.lastReq)
 }
 
+func TestIsImageGenerationIntentForGroupGate(t *testing.T) {
+	stripGroup := &Group{
+		Platform:                      PlatformOpenAI,
+		AllowImageGeneration:          false,
+		StripCodexImageGenerationTool: true,
+	}
+
+	tests := []struct {
+		name           string
+		endpoint       string
+		requestedModel string
+		body           []byte
+		group          *Group
+		want           bool
+	}{
+		{
+			name:           "strip group ignores flat image tool and explicit choice",
+			endpoint:       openAIResponsesEndpoint,
+			requestedModel: "gpt-5.4",
+			body:           []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation"}],"tool_choice":{"type":"image_generation"}}`),
+			group:          stripGroup,
+			want:           false,
+		},
+		{
+			name:           "strip group ignores namespace additional tool",
+			endpoint:       openAIResponsesEndpoint,
+			requestedModel: "gpt-5.4",
+			body:           []byte(`{"model":"gpt-5.4","input":[{"type":"additional_tools","tools":[{"type":"namespace","name":"image_gen"}]}]}`),
+			group:          stripGroup,
+			want:           false,
+		},
+		{
+			name:           "strip group still detects requested image model",
+			endpoint:       openAIResponsesEndpoint,
+			requestedModel: "gpt-image-2",
+			body:           []byte(`{"model":"gpt-image-2","input":"draw"}`),
+			group:          stripGroup,
+			want:           true,
+		},
+		{
+			name:           "strip group still detects body image model",
+			endpoint:       openAIResponsesEndpoint,
+			requestedModel: "gpt-5.4",
+			body:           []byte(`{"model":"gpt-image-2","input":"draw"}`),
+			group:          stripGroup,
+			want:           true,
+		},
+		{
+			name:           "strip group still detects dedicated image endpoint",
+			endpoint:       "/v1/images/generations",
+			requestedModel: "gpt-5.4",
+			body:           []byte(`{"model":"gpt-5.4","prompt":"draw"}`),
+			group:          stripGroup,
+			want:           true,
+		},
+		{
+			name:           "group without strip detects advertised image tool",
+			endpoint:       openAIResponsesEndpoint,
+			requestedModel: "gpt-5.4",
+			body:           []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation"}]}`),
+			group:          &Group{Platform: PlatformOpenAI},
+			want:           true,
+		},
+		{
+			name:           "non openai group cannot enable codex strip",
+			endpoint:       openAIResponsesEndpoint,
+			requestedModel: "gpt-5.4",
+			body:           []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation"}]}`),
+			group:          &Group{Platform: PlatformAnthropic, StripCodexImageGenerationTool: true},
+			want:           true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, IsImageGenerationIntentForGroupGate(tt.endpoint, tt.requestedModel, tt.body, tt.group))
+		})
+	}
+}
+
 func TestOpenAIGatewayServiceForward_CodexImageInjectionRespectsGroupCapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
