@@ -227,7 +227,33 @@ func TestOpenAIGatewayServiceForward_GroupPolicyStripsAdvertisedImageToolsBefore
 	require.True(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="function")`).Exists())
 }
 
-func TestOpenAIGatewayServiceForward_GroupPolicyKeepsExplicitImageIntentBlocked(t *testing.T) {
+func TestOpenAIGatewayServiceForward_GroupPolicyStripsExplicitImageToolChoiceBeforeGate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_group_explicit_strip","model":"gpt-5.4","usage":{"input_tokens":2,"output_tokens":1}}`)),
+	}}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, recorder := newOpenAIImageGenerationControlTestContext(false, "third-party-client/1.0")
+	apiKey := getAPIKeyFromContext(c)
+	apiKey.Group.StripCodexImageGenerationTool = true
+	account := newOpenAIImageGenerationControlTestAccount()
+	body := []byte(`{"model":"gpt-5.4","input":"write code","tools":[{"type":"function","name":"shell","parameters":{"type":"object"}},{"type":"namespace","name":"image_gen"}],"tool_choice":{"type":"namespace","name":"image_gen"}}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotNil(t, upstream.lastReq)
+	require.False(t, gjson.GetBytes(upstream.lastBody, `tools.#(name=="image_gen")`).Exists())
+	require.True(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="function")`).Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "tool_choice").Exists())
+}
+
+func TestOpenAIGatewayServiceForward_GroupPolicyStillBlocksImageModelAfterStrip(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	upstream := &httpUpstreamRecorder{}
@@ -236,9 +262,8 @@ func TestOpenAIGatewayServiceForward_GroupPolicyKeepsExplicitImageIntentBlocked(
 	apiKey := getAPIKeyFromContext(c)
 	apiKey.Group.StripCodexImageGenerationTool = true
 	account := newOpenAIImageGenerationControlTestAccount()
-	body := []byte(`{"model":"gpt-5.4","input":"draw","tools":[{"type":"image_generation"}],"tool_choice":{"type":"image_generation"}}`)
 
-	result, err := svc.Forward(context.Background(), c, account, body)
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-image-2","input":"draw"}`))
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -283,7 +308,7 @@ func TestOpenAIGatewayServiceForward_GroupPolicyStripsToolsForPassthrough(t *tes
 	apiKey.Group.StripCodexImageGenerationTool = true
 	account := newOpenAIImageGenerationControlTestAccount()
 	account.Extra = map[string]any{"openai_passthrough": true}
-	body := []byte(`{"model":"gpt-5.4","input":"write code","stream":false,"tools":[{"type":"function","name":"shell","parameters":{"type":"object"}},{"type":"image_generation"}]}`)
+	body := []byte(`{"model":"gpt-5.4","input":"write code","stream":false,"tools":[{"type":"function","name":"shell","parameters":{"type":"object"}},{"type":"image_generation"},{"type":"namespace","name":"image_gen"}],"tool_choice":{"type":"namespace","name":"image_gen"}}`)
 
 	result, err := svc.Forward(context.Background(), c, account, body)
 
@@ -291,7 +316,9 @@ func TestOpenAIGatewayServiceForward_GroupPolicyStripsToolsForPassthrough(t *tes
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
 	require.False(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="image_generation")`).Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, `tools.#(name=="image_gen")`).Exists())
 	require.True(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="function")`).Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "tool_choice").Exists())
 }
 
 func TestOpenAIGatewayServiceForward_ChannelBridgeOverrideEnablesCodexInjection(t *testing.T) {

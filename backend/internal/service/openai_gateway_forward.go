@@ -62,7 +62,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	stripImageGenerationTool := GroupStripsCodexImageGenerationTool(apiKeyGroup(apiKey)) ||
 		(isCodexCLI && codexImageGenerationExplicitToolPolicy == codexImageGenerationExplicitToolPolicyStrip)
-	explicitImageIntent := IsExplicitImageGenerationIntent(openAIResponsesEndpoint, reqModel, body)
 	if stripImageGenerationTool {
 		strippedBody, changed, stripErr := stripOpenAIImageGenerationToolFromRawPayload(body)
 		if stripErr != nil {
@@ -77,7 +76,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 	imageIntent := IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body)
-	if (explicitImageIntent || imageIntent) && !imageGenerationAllowed {
+	if imageIntent && !imageGenerationAllowed {
 		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "permission_error", "message": ImageGenerationPermissionMessage()}})
 		return nil, errors.New("image generation disabled for group")

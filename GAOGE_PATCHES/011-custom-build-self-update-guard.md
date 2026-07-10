@@ -1,4 +1,4 @@
-# 010 Custom Build Self-Update Guard
+# 011 Custom Build Self-Update Guard
 
 ## Purpose
 

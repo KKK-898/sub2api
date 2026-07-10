@@ -28,21 +28,6 @@ func GroupStripsCodexImageGenerationTool(group *Group) bool {
 	return group != nil && group.Platform == PlatformOpenAI && group.StripCodexImageGenerationTool
 }
 
-// IsExplicitImageGenerationIntent identifies requests that explicitly select an
-// image execution path, rather than merely advertising an optional image tool.
-func IsExplicitImageGenerationIntent(endpoint string, requestedModel string, body []byte) bool {
-	if IsImageGenerationEndpoint(endpoint) || isOpenAIImageGenerationModel(requestedModel) {
-		return true
-	}
-	if len(body) == 0 || !gjson.ValidBytes(body) {
-		return false
-	}
-	if model := strings.TrimSpace(gjson.GetBytes(body, "model").String()); isOpenAIImageGenerationModel(model) {
-		return true
-	}
-	return openAIJSONToolChoiceSelectsImageGeneration(gjson.GetBytes(body, "tool_choice"))
-}
-
 // IsImageGenerationIntent classifies requests that can produce generated images.
 func IsImageGenerationIntent(endpoint string, requestedModel string, body []byte) bool {
 	if IsImageGenerationEndpoint(endpoint) {

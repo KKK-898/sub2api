@@ -195,6 +195,7 @@ func TestStripOpenAIImageGenerationToolFromRawPayload(t *testing.T) {
 	require.False(t, gjson.GetBytes(updated, `input.#(type=="additional_tools")`).Exists())
 	require.True(t, gjson.GetBytes(updated, `tools.#(type=="function")`).Exists())
 	require.False(t, gjson.GetBytes(updated, "tool_choice").Exists())
+	require.False(t, IsImageGenerationIntent(openAIResponsesEndpoint, "gpt-5.4", updated))
 }
 
 func TestAlignStoreDisabledPreviousResponseID(t *testing.T) {
