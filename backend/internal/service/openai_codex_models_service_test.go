@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,6 +17,68 @@ func newCodexModelsTestAccount() *Account {
 			"access_token":       "test-access-token",
 			"chatgpt_account_id": "acc-123",
 		},
+	}
+}
+
+func TestSelectCodexModelsAccountSkipsAPIKeyAccount(t *testing.T) {
+	repo := stubOpenAIAccountRepo{accounts: []Account{
+		{
+			ID:          1,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Priority:    1,
+			Credentials: map[string]any{"api_key": "sk-api-key"},
+		},
+		{
+			ID:          2,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Priority:    2,
+			Credentials: map[string]any{"access_token": "oauth-access-token"},
+		},
+	}}
+
+	groupID := int64(3)
+	s := &OpenAIGatewayService{accountRepo: repo}
+	account, err := s.SelectCodexModelsAccount(context.Background(), &groupID)
+	if err != nil {
+		t.Fatalf("SelectCodexModelsAccount returned error: %v", err)
+	}
+	if account == nil || account.ID != 2 {
+		t.Fatalf("selected account: got %#v, want OAuth account 2", account)
+	}
+}
+
+func TestSelectCodexModelsAccountRejectsAPIKeyOnlyPool(t *testing.T) {
+	repo := stubOpenAIAccountRepo{accounts: []Account{
+		{
+			ID:          1,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Credentials: map[string]any{"api_key": "sk-api-key"},
+		},
+	}}
+
+	groupID := int64(3)
+	s := &OpenAIGatewayService{accountRepo: repo}
+	account, err := s.SelectCodexModelsAccount(context.Background(), &groupID)
+	if account != nil {
+		t.Fatalf("selected account: got %#v, want nil", account)
+	}
+	if err == nil {
+		t.Fatal("expected no-available-account error, got nil")
+	}
+	if errors.Is(err, ErrNoAvailableAccounts) {
+		return
+	}
+	if err.Error() != "no available OpenAI accounts" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
