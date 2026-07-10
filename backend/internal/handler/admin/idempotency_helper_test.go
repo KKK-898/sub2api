@@ -283,3 +283,64 @@ func TestExecuteAdminIdempotentJSONConcurrentRetryOnlyOneSideEffect(t *testing.T
 	require.Equal(t, "true", headers3.Get("X-Idempotency-Replayed"))
 	require.Equal(t, int32(1), executed.Load())
 }
+
+func TestExecuteAdminIdempotentJSONAcceptsLegacyXIdempotencyKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newMemoryIdempotencyRepoStub()
+	service.SetDefaultIdempotencyCoordinator(service.NewIdempotencyCoordinator(repo, service.DefaultIdempotencyConfig()))
+	t.Cleanup(func() {
+		service.SetDefaultIdempotencyCoordinator(nil)
+	})
+
+	var executed atomic.Int32
+	router := gin.New()
+	router.POST("/idempotent", func(c *gin.Context) {
+		executeAdminIdempotentJSON(c, "admin.test.xkey", map[string]any{"a": 1}, time.Minute, func(ctx context.Context) (any, error) {
+			executed.Add(1)
+			return gin.H{"ok": true}, nil
+		})
+	})
+
+	call := func() (int, http.Header) {
+		req := httptest.NewRequest(http.MethodPost, "/idempotent", bytes.NewBufferString(`{"a":1}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Idempotency-Key", "legacy-key")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code, rec.Header()
+	}
+
+	status1, _ := call()
+	status2, headers2 := call()
+
+	require.Equal(t, http.StatusOK, status1)
+	require.Equal(t, http.StatusOK, status2)
+	require.Equal(t, "true", headers2.Get("X-Idempotency-Replayed"))
+	require.Equal(t, int32(1), executed.Load())
+}
+
+func TestExecuteAdminIdempotentJSONRequireKeyRejectsMissingDuringObserveOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newMemoryIdempotencyRepoStub()
+	service.SetDefaultIdempotencyCoordinator(service.NewIdempotencyCoordinator(repo, service.DefaultIdempotencyConfig()))
+	t.Cleanup(func() {
+		service.SetDefaultIdempotencyCoordinator(nil)
+	})
+
+	var executed atomic.Int32
+	router := gin.New()
+	router.POST("/strict-idempotent", func(c *gin.Context) {
+		executeAdminIdempotentJSONRequireKey(c, "admin.test.strict", map[string]any{"a": 1}, time.Minute, func(ctx context.Context) (any, error) {
+			executed.Add(1)
+			return gin.H{"ok": true}, nil
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/strict-idempotent", bytes.NewBufferString(`{"a":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, int32(0), executed.Load(), "strict admin idempotency should not execute without a key")
+}

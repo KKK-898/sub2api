@@ -2,13 +2,18 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
 	"time"
 
 	"github.com/alitto/pond/v2"
+	"github.com/google/uuid"
 )
+
+const channelMonitorRunnerLeaderLockTTL = monitorRequestTimeout + monitorPingTimeout + monitorRunOneBuffer + 15*time.Second
 
 // MonitorScheduler 调度器接口，供 ChannelMonitorService 在 CRUD 时回调，
 // 用 setter 注入避免 service ↔ runner 的 wire 依赖环。
@@ -47,6 +52,9 @@ type monitorRunnerSvc interface {
 type ChannelMonitorRunner struct {
 	svc            monitorRunnerSvc
 	settingService *SettingService
+	lockCache      LeaderLockCache
+	db             *sql.DB
+	instanceID     string
 
 	pool         pond.Pool
 	parentCtx    context.Context
@@ -103,12 +111,23 @@ func newChannelMonitorRunner(svc monitorRunnerSvc, settingService *SettingServic
 	return &ChannelMonitorRunner{
 		svc:            svc,
 		settingService: settingService,
+		instanceID:     uuid.NewString(),
 		pool:           pond.NewPool(monitorWorkerConcurrency),
 		parentCtx:      ctx,
 		parentCancel:   cancel,
 		tasks:          make(map[int64]*scheduledMonitor),
 		inFlight:       make(map[int64]struct{}),
 	}
+}
+
+// SetLeaderLock injects cross-instance coordination so the same monitor is not
+// checked concurrently by every node in a multi-server deployment.
+func (r *ChannelMonitorRunner) SetLeaderLock(lockCache LeaderLockCache, db *sql.DB) {
+	if r == nil {
+		return
+	}
+	r.lockCache = lockCache
+	r.db = db
 }
 
 // Start 加载所有 enabled monitor 并为每个建立独立定时任务。
@@ -307,6 +326,15 @@ func (r *ChannelMonitorRunner) runOne(id int64, name string) {
 				"monitor_id", id, "name", name, "panic", rec)
 		}
 	}()
+
+	lockKey := fmt.Sprintf("channel:monitor:%d:leader", id)
+	release, ok := tryAcquireSingletonLeaderLock(ctx, r.lockCache, r.db, lockKey, r.instanceID, channelMonitorRunnerLeaderLockTTL)
+	if !ok {
+		slog.Debug("channel_monitor: leader lock held by another instance; skip",
+			"monitor_id", id, "name", name)
+		return
+	}
+	defer release()
 
 	if _, err := r.svc.RunCheck(ctx, id); err != nil {
 		slog.Warn("channel_monitor: run check failed",

@@ -593,8 +593,14 @@ func isCodexSparkModel(model string) bool {
 }
 
 func hasOpenAIImageGenerationTool(reqBody map[string]any) bool {
-	rawTools, ok := reqBody["tools"]
-	if !ok || rawTools == nil {
+	if toolsContainImageGeneration(reqBody["tools"]) {
+		return true
+	}
+	return inputContainsImageGenNamespace(reqBody["input"])
+}
+
+func toolsContainImageGeneration(rawTools any) bool {
+	if rawTools == nil {
 		return false
 	}
 	tools, ok := rawTools.([]any)
@@ -609,51 +615,100 @@ func hasOpenAIImageGenerationTool(reqBody map[string]any) bool {
 		if strings.TrimSpace(firstNonEmptyString(toolMap["type"])) == "image_generation" {
 			return true
 		}
+		if isImageGenNamespaceToolMap(toolMap) {
+			return true
+		}
+	}
+	return false
+}
+
+func isImageGenNamespaceToolMap(tool map[string]any) bool {
+	return strings.TrimSpace(firstNonEmptyString(tool["type"])) == "namespace" &&
+		strings.TrimSpace(firstNonEmptyString(tool["name"])) == "image_gen"
+}
+
+func inputContainsImageGenNamespace(rawInput any) bool {
+	input, ok := rawInput.([]any)
+	if !ok {
+		return false
+	}
+	for _, rawItem := range input {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(firstNonEmptyString(item["type"])) != "additional_tools" {
+			continue
+		}
+		if toolsContainImageGeneration(item["tools"]) {
+			return true
+		}
 	}
 	return false
 }
 
 func stripOpenAIImageGenerationTools(reqBody map[string]any) bool {
-	rawTools, ok := reqBody["tools"]
-	if !ok || rawTools == nil {
-		if openAIAnyToolChoiceSelectsImageGeneration(reqBody["tool_choice"]) {
-			delete(reqBody, "tool_choice")
-			return true
+	removed := false
+	if tools, ok := reqBody["tools"].([]any); ok {
+		filtered, toolsRemoved := stripImageGenerationToolList(tools)
+		if toolsRemoved {
+			removed = true
+			if len(filtered) == 0 {
+				delete(reqBody, "tools")
+			} else {
+				reqBody["tools"] = filtered
+			}
 		}
-		return false
 	}
-	tools, ok := rawTools.([]any)
-	if !ok {
-		if openAIAnyToolChoiceSelectsImageGeneration(reqBody["tool_choice"]) {
-			delete(reqBody, "tool_choice")
-			return true
+	if input, ok := reqBody["input"].([]any); ok {
+		filteredInput := make([]any, 0, len(input))
+		inputRemoved := false
+		for _, rawItem := range input {
+			item, ok := rawItem.(map[string]any)
+			if !ok || strings.TrimSpace(firstNonEmptyString(item["type"])) != "additional_tools" {
+				filteredInput = append(filteredInput, rawItem)
+				continue
+			}
+			tools, ok := item["tools"].([]any)
+			if !ok {
+				filteredInput = append(filteredInput, rawItem)
+				continue
+			}
+			filtered, toolsRemoved := stripImageGenerationToolList(tools)
+			if !toolsRemoved {
+				filteredInput = append(filteredInput, rawItem)
+				continue
+			}
+			inputRemoved = true
+			if len(filtered) > 0 {
+				item["tools"] = filtered
+				filteredInput = append(filteredInput, item)
+			}
 		}
-		return false
+		if inputRemoved {
+			removed = true
+			reqBody["input"] = filteredInput
+		}
 	}
+	if openAIAnyToolChoiceSelectsImageGeneration(reqBody["tool_choice"]) {
+		delete(reqBody, "tool_choice")
+		removed = true
+	}
+	return removed
+}
+
+func stripImageGenerationToolList(tools []any) ([]any, bool) {
 	filtered := make([]any, 0, len(tools))
 	removed := false
 	for _, rawTool := range tools {
-		if toolMap, ok := rawTool.(map[string]any); ok &&
-			strings.TrimSpace(firstNonEmptyString(toolMap["type"])) == "image_generation" {
+		toolMap, ok := rawTool.(map[string]any)
+		if ok && (strings.TrimSpace(firstNonEmptyString(toolMap["type"])) == "image_generation" || isImageGenNamespaceToolMap(toolMap)) {
 			removed = true
 			continue
 		}
 		filtered = append(filtered, rawTool)
 	}
-	if !removed && !openAIAnyToolChoiceSelectsImageGeneration(reqBody["tool_choice"]) {
-		return false
-	}
-	if removed {
-		if len(filtered) == 0 {
-			delete(reqBody, "tools")
-		} else {
-			reqBody["tools"] = filtered
-		}
-	}
-	if openAIAnyToolChoiceSelectsImageGeneration(reqBody["tool_choice"]) {
-		delete(reqBody, "tool_choice")
-	}
-	return true
+	return filtered, removed
 }
 
 // stripCodexSparkImageGenerationTools removes image_generation tool entries from
@@ -1303,6 +1358,16 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) []an
 		if !opts.PreserveReferences {
 			ensureCopy()
 			delete(newItem, "id")
+		} else if isCodexToolCallInputType(typ) {
+			// 续链模式下保留 id 以维持上下文引用，但 function_call 等
+			// call-input 类 item 的 id 必须以 "fc" 开头（上游校验
+			// "Expected an ID that begins with 'fc'"）。item_* 形式的 id
+			// 来自客户端回放，需要删除。
+			// 注意：function_call_output 等 output 类的 id 无此约束，不动。
+			if id, ok := m["id"].(string); ok && id != "" && !strings.HasPrefix(id, "fc") {
+				ensureCopy()
+				delete(newItem, "id")
+			}
 		}
 
 		filtered = append(filtered, newItem)
@@ -1322,6 +1387,22 @@ func isCodexToolCallItemType(typ string) bool {
 		"mcp_tool_call_output",
 		"custom_tool_call_output",
 		"tool_search_output":
+		return true
+	default:
+		return false
+	}
+}
+
+// isCodexToolCallInputType 仅匹配 call-input 类型（不含 output），这些类型的
+// id 必须以 "fc" 开头，上游会校验 "Expected an ID that begins with 'fc'."。
+func isCodexToolCallInputType(typ string) bool {
+	switch typ {
+	case "function_call",
+		"tool_call",
+		"local_shell_call",
+		"tool_search_call",
+		"custom_tool_call",
+		"mcp_tool_call":
 		return true
 	default:
 		return false

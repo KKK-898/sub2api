@@ -3,6 +3,7 @@ package service
 import (
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,9 @@ const (
 	settingKeyBackupRecords  = "backup_records"
 
 	maxBackupRecords = 100
+
+	backupScheduledLeaderLockKey = "backup:scheduled:leader"
+	backupScheduledLeaderLockTTL = 35 * time.Minute
 )
 
 var (
@@ -110,6 +114,9 @@ type BackupService struct {
 	encryptor    SecretEncryptor
 	storeFactory BackupObjectStoreFactory
 	dumper       DBDumper
+	lockCache    LeaderLockCache
+	db           *sql.DB
+	instanceID   string
 
 	opMu      sync.Mutex // 保护 backingUp/restoring 标志
 	backingUp bool
@@ -145,12 +152,22 @@ func NewBackupService(
 		encryptor:    encryptor,
 		storeFactory: storeFactory,
 		dumper:       dumper,
+		instanceID:   uuid.NewString(),
 		bgCtx:        bgCtx,
 		bgCancel:     bgCancel,
 	}
 }
 
 // Start 启动定时备份调度器并清理孤立记录
+// SetLeaderLock injects cross-instance coordination for scheduled backups.
+func (s *BackupService) SetLeaderLock(lockCache LeaderLockCache, db *sql.DB) {
+	if s == nil {
+		return
+	}
+	s.lockCache = lockCache
+	s.db = db
+}
+
 func (s *BackupService) Start() {
 	s.cronSched = cron.New()
 	s.cronSched.Start()
@@ -392,6 +409,13 @@ func (s *BackupService) runScheduledBackup() {
 	defer cancel()
 
 	// 读取定时备份配置中的过期天数
+	release, ok := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db, backupScheduledLeaderLockKey, s.instanceID, backupScheduledLeaderLockTTL)
+	if !ok {
+		logger.LegacyPrintf("service.backup", "[Backup] scheduled backup skipped: leader lock held by another instance")
+		return
+	}
+	defer release()
+
 	schedule, _ := s.GetSchedule(ctx)
 	expireDays := 14 // 默认14天过期
 	if schedule != nil && schedule.RetainDays > 0 {

@@ -17,71 +17,71 @@ import (
 // getClientSecret
 // ---------------------------------------------------------------------------
 
-func TestGetClientSecret_环境变量设置(t *testing.T) {
+func TestGetClientSecret_鐜鍙橀噺璁剧疆(t *testing.T) {
 	old := defaultClientSecret
 	defaultClientSecret = ""
 	t.Cleanup(func() { defaultClientSecret = old })
 	t.Setenv(AntigravityOAuthClientSecretEnv, "my-secret-value")
 
-	// 需要重新触发 init 逻辑：手动从环境变量读取
+	// 闇€瑕侀噸鏂拌Е鍙?init 閫昏緫锛氭墜鍔ㄤ粠鐜鍙橀噺璇诲彇
 	defaultClientSecret = os.Getenv(AntigravityOAuthClientSecretEnv)
 
 	secret, err := getClientSecret()
 	if err != nil {
-		t.Fatalf("获取 client_secret 失败: %v", err)
+		t.Fatalf("鑾峰彇 client_secret 澶辫触: %v", err)
 	}
 	if secret != "my-secret-value" {
-		t.Errorf("client_secret 不匹配: got %s, want my-secret-value", secret)
+		t.Errorf("client_secret 涓嶅尮閰? got %s, want my-secret-value", secret)
 	}
 }
 
-func TestGetClientSecret_环境变量为空(t *testing.T) {
+func TestGetClientSecret_鐜鍙橀噺涓虹┖(t *testing.T) {
 	old := defaultClientSecret
 	defaultClientSecret = ""
 	t.Cleanup(func() { defaultClientSecret = old })
 
 	_, err := getClientSecret()
 	if err == nil {
-		t.Fatal("defaultClientSecret 为空时应返回错误")
+		t.Fatal("defaultClientSecret 涓虹┖鏃跺簲杩斿洖閿欒")
 	}
 	if !strings.Contains(err.Error(), AntigravityOAuthClientSecretEnv) {
-		t.Errorf("错误信息应包含环境变量名: got %s", err.Error())
+		t.Errorf("閿欒淇℃伅搴斿寘鍚幆澧冨彉閲忓悕: got %s", err.Error())
 	}
 }
 
-func TestGetClientSecret_环境变量未设置(t *testing.T) {
+func TestGetClientSecret_鐜鍙橀噺鏈缃?t *testing.T) {
 	old := defaultClientSecret
 	defaultClientSecret = ""
 	t.Cleanup(func() { defaultClientSecret = old })
 
 	_, err := getClientSecret()
 	if err == nil {
-		t.Fatal("defaultClientSecret 为空时应返回错误")
+		t.Fatal("defaultClientSecret 涓虹┖鏃跺簲杩斿洖閿欒")
 	}
 }
 
-func TestGetClientSecret_环境变量含空格(t *testing.T) {
+func TestGetClientSecret_鐜鍙橀噺鍚┖鏍?t *testing.T) {
 	old := defaultClientSecret
 	defaultClientSecret = "   "
 	t.Cleanup(func() { defaultClientSecret = old })
 
 	_, err := getClientSecret()
 	if err == nil {
-		t.Fatal("defaultClientSecret 仅含空格时应返回错误")
+		t.Fatal("defaultClientSecret 浠呭惈绌烘牸鏃跺簲杩斿洖閿欒")
 	}
 }
 
-func TestGetClientSecret_环境变量有前后空格(t *testing.T) {
+func TestGetClientSecret_鐜鍙橀噺鏈夊墠鍚庣┖鏍?t *testing.T) {
 	old := defaultClientSecret
 	defaultClientSecret = "  valid-secret  "
 	t.Cleanup(func() { defaultClientSecret = old })
 
 	secret, err := getClientSecret()
 	if err != nil {
-		t.Fatalf("获取 client_secret 失败: %v", err)
+		t.Fatalf("鑾峰彇 client_secret 澶辫触: %v", err)
 	}
 	if secret != "valid-secret" {
-		t.Errorf("应去除前后空格: got %q, want %q", secret, "valid-secret")
+		t.Errorf("搴斿幓闄ゅ墠鍚庣┖鏍? got %q, want %q", secret, "valid-secret")
 	}
 }
 
@@ -89,24 +89,22 @@ func TestGetClientSecret_环境变量有前后空格(t *testing.T) {
 // ForwardBaseURLs
 // ---------------------------------------------------------------------------
 
-func TestForwardBaseURLs_Daily优先(t *testing.T) {
+func TestForwardBaseURLs_Daily浼樺厛(t *testing.T) {
 	urls := ForwardBaseURLs()
 	if len(urls) == 0 {
-		t.Fatal("ForwardBaseURLs 返回空列表")
+		t.Fatal("ForwardBaseURLs 杩斿洖绌哄垪琛?)
 	}
 
-	// daily URL 应排在第一位
-	if urls[0] != antigravityDailyBaseURL {
-		t.Errorf("第一个 URL 应为 daily: got %s, want %s", urls[0], antigravityDailyBaseURL)
+	// daily URL 搴旀帓鍦ㄧ涓€浣?	if urls[0] != antigravityDailyBaseURL {
+		t.Errorf("绗竴涓?URL 搴斾负 daily: got %s, want %s", urls[0], antigravityDailyBaseURL)
 	}
 
-	// 应包含所有 URL
+	// 搴斿寘鍚墍鏈?URL
 	if len(urls) != len(BaseURLs) {
-		t.Errorf("URL 数量不匹配: got %d, want %d", len(urls), len(BaseURLs))
+		t.Errorf("URL 鏁伴噺涓嶅尮閰? got %d, want %d", len(urls), len(BaseURLs))
 	}
 
-	// 验证 prod URL 也在列表中
-	found := false
+	// 楠岃瘉 prod URL 涔熷湪鍒楄〃涓?	found := false
 	for _, u := range urls {
 		if u == antigravityProdBaseURL {
 			found = true
@@ -114,16 +112,16 @@ func TestForwardBaseURLs_Daily优先(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("ForwardBaseURLs 中缺少 prod URL")
+		t.Error("ForwardBaseURLs 涓己灏?prod URL")
 	}
 }
 
-func TestForwardBaseURLs_不修改原切片(t *testing.T) {
+func TestForwardBaseURLs_涓嶄慨鏀瑰師鍒囩墖(t *testing.T) {
 	originalFirst := BaseURLs[0]
 	_ = ForwardBaseURLs()
-	// 确保原始 BaseURLs 未被修改
+	// 纭繚鍘熷 BaseURLs 鏈淇敼
 	if BaseURLs[0] != originalFirst {
-		t.Errorf("ForwardBaseURLs 不应修改原始 BaseURLs: got %s, want %s", BaseURLs[0], originalFirst)
+		t.Errorf("ForwardBaseURLs 涓嶅簲淇敼鍘熷 BaseURLs: got %s, want %s", BaseURLs[0], originalFirst)
 	}
 }
 
@@ -134,13 +132,13 @@ func TestForwardBaseURLs_不修改原切片(t *testing.T) {
 func TestNewURLAvailability(t *testing.T) {
 	ua := NewURLAvailability(5 * time.Minute)
 	if ua == nil {
-		t.Fatal("NewURLAvailability 返回 nil")
+		t.Fatal("NewURLAvailability 杩斿洖 nil")
 	}
 	if ua.ttl != 5*time.Minute {
-		t.Errorf("TTL 不匹配: got %v, want 5m", ua.ttl)
+		t.Errorf("TTL 涓嶅尮閰? got %v, want 5m", ua.ttl)
 	}
 	if ua.unavailable == nil {
-		t.Error("unavailable map 不应为 nil")
+		t.Error("unavailable map 涓嶅簲涓?nil")
 	}
 }
 
@@ -151,7 +149,7 @@ func TestURLAvailability_MarkUnavailable(t *testing.T) {
 	ua.MarkUnavailable(testURL)
 
 	if ua.IsAvailable(testURL) {
-		t.Error("标记为不可用后 IsAvailable 应返回 false")
+		t.Error("鏍囪涓轰笉鍙敤鍚?IsAvailable 搴旇繑鍥?false")
 	}
 }
 
@@ -159,71 +157,68 @@ func TestURLAvailability_MarkSuccess(t *testing.T) {
 	ua := NewURLAvailability(5 * time.Minute)
 	testURL := "https://example.com"
 
-	// 先标记为不可用
-	ua.MarkUnavailable(testURL)
+	// 鍏堟爣璁颁负涓嶅彲鐢?	ua.MarkUnavailable(testURL)
 	if ua.IsAvailable(testURL) {
-		t.Error("标记为不可用后应不可用")
+		t.Error("鏍囪涓轰笉鍙敤鍚庡簲涓嶅彲鐢?)
 	}
 
-	// 标记成功后应恢复可用
+	// 鏍囪鎴愬姛鍚庡簲鎭㈠鍙敤
 	ua.MarkSuccess(testURL)
 	if !ua.IsAvailable(testURL) {
-		t.Error("MarkSuccess 后应恢复可用")
+		t.Error("MarkSuccess 鍚庡簲鎭㈠鍙敤")
 	}
 
-	// 验证 lastSuccess 被设置
-	ua.mu.RLock()
+	// 楠岃瘉 lastSuccess 琚缃?	ua.mu.RLock()
 	if ua.lastSuccess != testURL {
-		t.Errorf("lastSuccess 不匹配: got %s, want %s", ua.lastSuccess, testURL)
+		t.Errorf("lastSuccess 涓嶅尮閰? got %s, want %s", ua.lastSuccess, testURL)
 	}
 	ua.mu.RUnlock()
 }
 
-func TestURLAvailability_IsAvailable_TTL过期(t *testing.T) {
-	// 使用极短的 TTL
+func TestURLAvailability_IsAvailable_TTL杩囨湡(t *testing.T) {
+	// 浣跨敤鏋佺煭鐨?TTL
 	ua := NewURLAvailability(1 * time.Millisecond)
 	testURL := "https://example.com"
 
 	ua.MarkUnavailable(testURL)
-	// 等待 TTL 过期
+	// 绛夊緟 TTL 杩囨湡
 	time.Sleep(5 * time.Millisecond)
 
 	if !ua.IsAvailable(testURL) {
-		t.Error("TTL 过期后 URL 应恢复可用")
+		t.Error("TTL 杩囨湡鍚?URL 搴旀仮澶嶅彲鐢?)
 	}
 }
 
-func TestURLAvailability_IsAvailable_未标记的URL(t *testing.T) {
+func TestURLAvailability_IsAvailable_鏈爣璁扮殑URL(t *testing.T) {
 	ua := NewURLAvailability(5 * time.Minute)
 	if !ua.IsAvailable("https://never-marked.com") {
-		t.Error("未标记的 URL 应默认可用")
+		t.Error("鏈爣璁扮殑 URL 搴旈粯璁ゅ彲鐢?)
 	}
 }
 
 func TestURLAvailability_GetAvailableURLs(t *testing.T) {
 	ua := NewURLAvailability(10 * time.Minute)
 
-	// 默认所有 URL 都可用
-	urls := ua.GetAvailableURLs()
+	// 榛樿鎵€鏈?URL 閮藉彲鐢?	urls := ua.GetAvailableURLs()
 	if len(urls) != len(BaseURLs) {
-		t.Errorf("可用 URL 数量不匹配: got %d, want %d", len(urls), len(BaseURLs))
+		t.Errorf("鍙敤 URL 鏁伴噺涓嶅尮閰? got %d, want %d", len(urls), len(BaseURLs))
 	}
 }
 
-func TestURLAvailability_GetAvailableURLs_标记一个不可用(t *testing.T) {
+func TestURLAvailability_GetAvailableURLs_鏍囪涓€涓笉鍙敤(t *testing.T) {
 	ua := NewURLAvailability(10 * time.Minute)
 
 	if len(BaseURLs) < 2 {
-		t.Skip("BaseURLs 少于 2 个，跳过此测试")
+		t.Skip("BaseURLs 灏戜簬 2 涓紝璺宠繃姝ゆ祴璇?)
 	}
 
 	ua.MarkUnavailable(BaseURLs[0])
 	urls := ua.GetAvailableURLs()
 
-	// 标记的 URL 不应出现在可用列表中
+	// 鏍囪鐨?URL 涓嶅簲鍑虹幇鍦ㄥ彲鐢ㄥ垪琛ㄤ腑
 	for _, u := range urls {
 		if u == BaseURLs[0] {
-			t.Errorf("被标记不可用的 URL 不应出现在可用列表中: %s", BaseURLs[0])
+			t.Errorf("琚爣璁颁笉鍙敤鐨?URL 涓嶅簲鍑虹幇鍦ㄥ彲鐢ㄥ垪琛ㄤ腑: %s", BaseURLs[0])
 		}
 	}
 }
@@ -234,11 +229,11 @@ func TestURLAvailability_GetAvailableURLsWithBase(t *testing.T) {
 
 	urls := ua.GetAvailableURLsWithBase(customURLs)
 	if len(urls) != 3 {
-		t.Errorf("可用 URL 数量不匹配: got %d, want 3", len(urls))
+		t.Errorf("鍙敤 URL 鏁伴噺涓嶅尮閰? got %d, want 3", len(urls))
 	}
 }
 
-func TestURLAvailability_GetAvailableURLsWithBase_LastSuccess优先(t *testing.T) {
+func TestURLAvailability_GetAvailableURLsWithBase_LastSuccess浼樺厛(t *testing.T) {
 	ua := NewURLAvailability(10 * time.Minute)
 	customURLs := []string{"https://a.com", "https://b.com", "https://c.com"}
 
@@ -246,22 +241,20 @@ func TestURLAvailability_GetAvailableURLsWithBase_LastSuccess优先(t *testing.T
 
 	urls := ua.GetAvailableURLsWithBase(customURLs)
 	if len(urls) != 3 {
-		t.Fatalf("可用 URL 数量不匹配: got %d, want 3", len(urls))
+		t.Fatalf("鍙敤 URL 鏁伴噺涓嶅尮閰? got %d, want 3", len(urls))
 	}
-	// c.com 应排在第一位
-	if urls[0] != "https://c.com" {
-		t.Errorf("lastSuccess 应排在第一位: got %s, want https://c.com", urls[0])
+	// c.com 搴旀帓鍦ㄧ涓€浣?	if urls[0] != "https://c.com" {
+		t.Errorf("lastSuccess 搴旀帓鍦ㄧ涓€浣? got %s, want https://c.com", urls[0])
 	}
-	// 其余按原始顺序
-	if urls[1] != "https://a.com" {
-		t.Errorf("第二个应为 a.com: got %s", urls[1])
+	// 鍏朵綑鎸夊師濮嬮『搴?	if urls[1] != "https://a.com" {
+		t.Errorf("绗簩涓簲涓?a.com: got %s", urls[1])
 	}
 	if urls[2] != "https://b.com" {
-		t.Errorf("第三个应为 b.com: got %s", urls[2])
+		t.Errorf("绗笁涓簲涓?b.com: got %s", urls[2])
 	}
 }
 
-func TestURLAvailability_GetAvailableURLsWithBase_LastSuccess不可用(t *testing.T) {
+func TestURLAvailability_GetAvailableURLsWithBase_LastSuccess涓嶅彲鐢?t *testing.T) {
 	ua := NewURLAvailability(10 * time.Minute)
 	customURLs := []string{"https://a.com", "https://b.com"}
 
@@ -269,25 +262,24 @@ func TestURLAvailability_GetAvailableURLsWithBase_LastSuccess不可用(t *testin
 	ua.MarkUnavailable("https://b.com")
 
 	urls := ua.GetAvailableURLsWithBase(customURLs)
-	// b.com 被标记不可用，不应出现
-	if len(urls) != 1 {
-		t.Fatalf("可用 URL 数量不匹配: got %d, want 1", len(urls))
+	// b.com 琚爣璁颁笉鍙敤锛屼笉搴斿嚭鐜?	if len(urls) != 1 {
+		t.Fatalf("鍙敤 URL 鏁伴噺涓嶅尮閰? got %d, want 1", len(urls))
 	}
 	if urls[0] != "https://a.com" {
-		t.Errorf("仅 a.com 应可用: got %s", urls[0])
+		t.Errorf("浠?a.com 搴斿彲鐢? got %s", urls[0])
 	}
 }
 
-func TestURLAvailability_GetAvailableURLsWithBase_LastSuccess不在列表中(t *testing.T) {
+func TestURLAvailability_GetAvailableURLsWithBase_LastSuccess涓嶅湪鍒楄〃涓?t *testing.T) {
 	ua := NewURLAvailability(10 * time.Minute)
 	customURLs := []string{"https://a.com", "https://b.com"}
 
 	ua.MarkSuccess("https://not-in-list.com")
 
 	urls := ua.GetAvailableURLsWithBase(customURLs)
-	// lastSuccess 不在自定义列表中，不应被添加
+	// lastSuccess 涓嶅湪鑷畾涔夊垪琛ㄤ腑锛屼笉搴旇娣诲姞
 	if len(urls) != 2 {
-		t.Fatalf("可用 URL 数量不匹配: got %d, want 2", len(urls))
+		t.Fatalf("鍙敤 URL 鏁伴噺涓嶅尮閰? got %d, want 2", len(urls))
 	}
 }
 
@@ -300,10 +292,10 @@ func TestNewSessionStore(t *testing.T) {
 	defer store.Stop()
 
 	if store == nil {
-		t.Fatal("NewSessionStore 返回 nil")
+		t.Fatal("NewSessionStore 杩斿洖 nil")
 	}
 	if store.sessions == nil {
-		t.Error("sessions map 不应为 nil")
+		t.Error("sessions map 涓嶅簲涓?nil")
 	}
 }
 
@@ -322,43 +314,42 @@ func TestSessionStore_SetAndGet(t *testing.T) {
 
 	got, ok := store.Get("session-1")
 	if !ok {
-		t.Fatal("Get 应返回 true")
+		t.Fatal("Get 搴旇繑鍥?true")
 	}
 	if got.State != "test-state" {
-		t.Errorf("State 不匹配: got %s", got.State)
+		t.Errorf("State 涓嶅尮閰? got %s", got.State)
 	}
 	if got.CodeVerifier != "test-verifier" {
-		t.Errorf("CodeVerifier 不匹配: got %s", got.CodeVerifier)
+		t.Errorf("CodeVerifier 涓嶅尮閰? got %s", got.CodeVerifier)
 	}
 	if got.ProxyURL != "http://proxy.example.com" {
-		t.Errorf("ProxyURL 不匹配: got %s", got.ProxyURL)
+		t.Errorf("ProxyURL 涓嶅尮閰? got %s", got.ProxyURL)
 	}
 }
 
-func TestSessionStore_Get_不存在(t *testing.T) {
+func TestSessionStore_Get_涓嶅瓨鍦?t *testing.T) {
 	store := NewSessionStore()
 	defer store.Stop()
 
 	_, ok := store.Get("nonexistent")
 	if ok {
-		t.Error("不存在的 session 应返回 false")
+		t.Error("涓嶅瓨鍦ㄧ殑 session 搴旇繑鍥?false")
 	}
 }
 
-func TestSessionStore_Get_过期(t *testing.T) {
+func TestSessionStore_Get_杩囨湡(t *testing.T) {
 	store := NewSessionStore()
 	defer store.Stop()
 
 	session := &OAuthSession{
 		State:     "expired-state",
-		CreatedAt: time.Now().Add(-SessionTTL - time.Minute), // 已过期
-	}
+		CreatedAt: time.Now().Add(-SessionTTL - time.Minute), // 宸茶繃鏈?	}
 
 	store.Set("expired-session", session)
 
 	_, ok := store.Get("expired-session")
 	if ok {
-		t.Error("过期的 session 应返回 false")
+		t.Error("杩囨湡鐨?session 搴旇繑鍥?false")
 	}
 }
 
@@ -376,15 +367,15 @@ func TestSessionStore_Delete(t *testing.T) {
 
 	_, ok := store.Get("del-session")
 	if ok {
-		t.Error("删除后 Get 应返回 false")
+		t.Error("鍒犻櫎鍚?Get 搴旇繑鍥?false")
 	}
 }
 
-func TestSessionStore_Delete_不存在(t *testing.T) {
+func TestSessionStore_Delete_涓嶅瓨鍦?t *testing.T) {
 	store := NewSessionStore()
 	defer store.Stop()
 
-	// 删除不存在的 session 不应 panic
+	// 鍒犻櫎涓嶅瓨鍦ㄧ殑 session 涓嶅簲 panic
 	store.Delete("nonexistent")
 }
 
@@ -392,11 +383,11 @@ func TestSessionStore_Stop(t *testing.T) {
 	store := NewSessionStore()
 	store.Stop()
 
-	// 多次 Stop 不应 panic
+	// 澶氭 Stop 涓嶅簲 panic
 	store.Stop()
 }
 
-func TestSessionStore_多个Session(t *testing.T) {
+func TestSessionStore_澶氫釜Session(t *testing.T) {
 	store := NewSessionStore()
 	defer store.Stop()
 
@@ -408,11 +399,11 @@ func TestSessionStore_多个Session(t *testing.T) {
 		store.Set("session-"+string(rune('0'+i)), session)
 	}
 
-	// 验证都能取到
+	// 楠岃瘉閮借兘鍙栧埌
 	for i := 0; i < 10; i++ {
 		_, ok := store.Get("session-" + string(rune('0'+i)))
 		if !ok {
-			t.Errorf("session-%d 应存在", i)
+			t.Errorf("session-%d 搴斿瓨鍦?, i)
 		}
 	}
 }
@@ -421,31 +412,30 @@ func TestSessionStore_多个Session(t *testing.T) {
 // GenerateRandomBytes
 // ---------------------------------------------------------------------------
 
-func TestGenerateRandomBytes_长度正确(t *testing.T) {
+func TestGenerateRandomBytes_闀垮害姝ｇ‘(t *testing.T) {
 	sizes := []int{0, 1, 16, 32, 64, 128}
 	for _, size := range sizes {
 		b, err := GenerateRandomBytes(size)
 		if err != nil {
-			t.Fatalf("GenerateRandomBytes(%d) 失败: %v", size, err)
+			t.Fatalf("GenerateRandomBytes(%d) 澶辫触: %v", size, err)
 		}
 		if len(b) != size {
-			t.Errorf("长度不匹配: got %d, want %d", len(b), size)
+			t.Errorf("闀垮害涓嶅尮閰? got %d, want %d", len(b), size)
 		}
 	}
 }
 
-func TestGenerateRandomBytes_不同调用产生不同结果(t *testing.T) {
+func TestGenerateRandomBytes_涓嶅悓璋冪敤浜х敓涓嶅悓缁撴灉(t *testing.T) {
 	b1, err := GenerateRandomBytes(32)
 	if err != nil {
-		t.Fatalf("第一次调用失败: %v", err)
+		t.Fatalf("绗竴娆¤皟鐢ㄥけ璐? %v", err)
 	}
 	b2, err := GenerateRandomBytes(32)
 	if err != nil {
-		t.Fatalf("第二次调用失败: %v", err)
+		t.Fatalf("绗簩娆¤皟鐢ㄥけ璐? %v", err)
 	}
-	// 两次生成的随机字节应该不同（概率上几乎不可能相同）
-	if string(b1) == string(b2) {
-		t.Error("两次生成的随机字节相同，概率极低，可能有问题")
+	// 涓ゆ鐢熸垚鐨勯殢鏈哄瓧鑺傚簲璇ヤ笉鍚岋紙姒傜巼涓婂嚑涔庝笉鍙兘鐩稿悓锛?	if string(b1) == string(b2) {
+		t.Error("涓ゆ鐢熸垚鐨勯殢鏈哄瓧鑺傜浉鍚岋紝姒傜巼鏋佷綆锛屽彲鑳芥湁闂")
 	}
 }
 
@@ -453,29 +443,28 @@ func TestGenerateRandomBytes_不同调用产生不同结果(t *testing.T) {
 // GenerateState
 // ---------------------------------------------------------------------------
 
-func TestGenerateState_返回值格式(t *testing.T) {
+func TestGenerateState_杩斿洖鍊兼牸寮?t *testing.T) {
 	state, err := GenerateState()
 	if err != nil {
-		t.Fatalf("GenerateState 失败: %v", err)
+		t.Fatalf("GenerateState 澶辫触: %v", err)
 	}
 	if state == "" {
-		t.Error("GenerateState 返回空字符串")
+		t.Error("GenerateState 杩斿洖绌哄瓧绗︿覆")
 	}
-	// base64url 编码不应包含 +, /, =
+	// base64url 缂栫爜涓嶅簲鍖呭惈 +, /, =
 	if strings.ContainsAny(state, "+/=") {
-		t.Errorf("GenerateState 返回值包含非 base64url 字符: %s", state)
+		t.Errorf("GenerateState 杩斿洖鍊煎寘鍚潪 base64url 瀛楃: %s", state)
 	}
-	// 32 字节的 base64url 编码长度应为 43（去掉了尾部 = 填充）
-	if len(state) != 43 {
-		t.Errorf("GenerateState 返回值长度不匹配: got %d, want 43", len(state))
+	// 32 瀛楄妭鐨?base64url 缂栫爜闀垮害搴斾负 43锛堝幓鎺変簡灏鹃儴 = 濉厖锛?	if len(state) != 43 {
+		t.Errorf("GenerateState 杩斿洖鍊奸暱搴︿笉鍖归厤: got %d, want 43", len(state))
 	}
 }
 
-func TestGenerateState_唯一性(t *testing.T) {
+func TestGenerateState_鍞竴鎬?t *testing.T) {
 	s1, _ := GenerateState()
 	s2, _ := GenerateState()
 	if s1 == s2 {
-		t.Error("两次 GenerateState 结果相同")
+		t.Error("涓ゆ GenerateState 缁撴灉鐩稿悓")
 	}
 }
 
@@ -483,29 +472,28 @@ func TestGenerateState_唯一性(t *testing.T) {
 // GenerateSessionID
 // ---------------------------------------------------------------------------
 
-func TestGenerateSessionID_返回值格式(t *testing.T) {
+func TestGenerateSessionID_杩斿洖鍊兼牸寮?t *testing.T) {
 	id, err := GenerateSessionID()
 	if err != nil {
-		t.Fatalf("GenerateSessionID 失败: %v", err)
+		t.Fatalf("GenerateSessionID 澶辫触: %v", err)
 	}
 	if id == "" {
-		t.Error("GenerateSessionID 返回空字符串")
+		t.Error("GenerateSessionID 杩斿洖绌哄瓧绗︿覆")
 	}
-	// 16 字节的 hex 编码长度应为 32
+	// 16 瀛楄妭鐨?hex 缂栫爜闀垮害搴斾负 32
 	if len(id) != 32 {
-		t.Errorf("GenerateSessionID 返回值长度不匹配: got %d, want 32", len(id))
+		t.Errorf("GenerateSessionID 杩斿洖鍊奸暱搴︿笉鍖归厤: got %d, want 32", len(id))
 	}
-	// 验证是合法的 hex 字符串
-	if _, err := hex.DecodeString(id); err != nil {
-		t.Errorf("GenerateSessionID 返回值不是合法的 hex 字符串: %s, err: %v", id, err)
+	// 楠岃瘉鏄悎娉曠殑 hex 瀛楃涓?	if _, err := hex.DecodeString(id); err != nil {
+		t.Errorf("GenerateSessionID 杩斿洖鍊间笉鏄悎娉曠殑 hex 瀛楃涓? %s, err: %v", id, err)
 	}
 }
 
-func TestGenerateSessionID_唯一性(t *testing.T) {
+func TestGenerateSessionID_鍞竴鎬?t *testing.T) {
 	id1, _ := GenerateSessionID()
 	id2, _ := GenerateSessionID()
 	if id1 == id2 {
-		t.Error("两次 GenerateSessionID 结果相同")
+		t.Error("涓ゆ GenerateSessionID 缁撴灉鐩稿悓")
 	}
 }
 
@@ -513,29 +501,29 @@ func TestGenerateSessionID_唯一性(t *testing.T) {
 // GenerateCodeVerifier
 // ---------------------------------------------------------------------------
 
-func TestGenerateCodeVerifier_返回值格式(t *testing.T) {
+func TestGenerateCodeVerifier_杩斿洖鍊兼牸寮?t *testing.T) {
 	verifier, err := GenerateCodeVerifier()
 	if err != nil {
-		t.Fatalf("GenerateCodeVerifier 失败: %v", err)
+		t.Fatalf("GenerateCodeVerifier 澶辫触: %v", err)
 	}
 	if verifier == "" {
-		t.Error("GenerateCodeVerifier 返回空字符串")
+		t.Error("GenerateCodeVerifier 杩斿洖绌哄瓧绗︿覆")
 	}
-	// base64url 编码不应包含 +, /, =
+	// base64url 缂栫爜涓嶅簲鍖呭惈 +, /, =
 	if strings.ContainsAny(verifier, "+/=") {
-		t.Errorf("GenerateCodeVerifier 返回值包含非 base64url 字符: %s", verifier)
+		t.Errorf("GenerateCodeVerifier 杩斿洖鍊煎寘鍚潪 base64url 瀛楃: %s", verifier)
 	}
-	// 32 字节的 base64url 编码长度应为 43
+	// 32 瀛楄妭鐨?base64url 缂栫爜闀垮害搴斾负 43
 	if len(verifier) != 43 {
-		t.Errorf("GenerateCodeVerifier 返回值长度不匹配: got %d, want 43", len(verifier))
+		t.Errorf("GenerateCodeVerifier 杩斿洖鍊奸暱搴︿笉鍖归厤: got %d, want 43", len(verifier))
 	}
 }
 
-func TestGenerateCodeVerifier_唯一性(t *testing.T) {
+func TestGenerateCodeVerifier_鍞竴鎬?t *testing.T) {
 	v1, _ := GenerateCodeVerifier()
 	v2, _ := GenerateCodeVerifier()
 	if v1 == v2 {
-		t.Error("两次 GenerateCodeVerifier 结果相同")
+		t.Error("涓ゆ GenerateCodeVerifier 缁撴灉鐩稿悓")
 	}
 }
 
@@ -548,42 +536,41 @@ func TestGenerateCodeChallenge_SHA256_Base64URL(t *testing.T) {
 
 	challenge := GenerateCodeChallenge(verifier)
 
-	// 手动计算预期值
-	hash := sha256.Sum256([]byte(verifier))
+	// 鎵嬪姩璁＄畻棰勬湡鍊?	hash := sha256.Sum256([]byte(verifier))
 	expected := strings.TrimRight(base64.URLEncoding.EncodeToString(hash[:]), "=")
 
 	if challenge != expected {
-		t.Errorf("CodeChallenge 不匹配: got %s, want %s", challenge, expected)
+		t.Errorf("CodeChallenge 涓嶅尮閰? got %s, want %s", challenge, expected)
 	}
 }
 
-func TestGenerateCodeChallenge_不含填充字符(t *testing.T) {
+func TestGenerateCodeChallenge_涓嶅惈濉厖瀛楃(t *testing.T) {
 	challenge := GenerateCodeChallenge("test-verifier")
 	if strings.Contains(challenge, "=") {
-		t.Errorf("CodeChallenge 不应包含 = 填充字符: %s", challenge)
+		t.Errorf("CodeChallenge 涓嶅簲鍖呭惈 = 濉厖瀛楃: %s", challenge)
 	}
 }
 
-func TestGenerateCodeChallenge_不含非URL安全字符(t *testing.T) {
+func TestGenerateCodeChallenge_涓嶅惈闈濽RL瀹夊叏瀛楃(t *testing.T) {
 	challenge := GenerateCodeChallenge("another-verifier")
 	if strings.ContainsAny(challenge, "+/") {
-		t.Errorf("CodeChallenge 不应包含 + 或 / 字符: %s", challenge)
+		t.Errorf("CodeChallenge 涓嶅簲鍖呭惈 + 鎴?/ 瀛楃: %s", challenge)
 	}
 }
 
-func TestGenerateCodeChallenge_相同输入相同输出(t *testing.T) {
+func TestGenerateCodeChallenge_鐩稿悓杈撳叆鐩稿悓杈撳嚭(t *testing.T) {
 	c1 := GenerateCodeChallenge("same-verifier")
 	c2 := GenerateCodeChallenge("same-verifier")
 	if c1 != c2 {
-		t.Errorf("相同输入应产生相同输出: got %s and %s", c1, c2)
+		t.Errorf("鐩稿悓杈撳叆搴斾骇鐢熺浉鍚岃緭鍑? got %s and %s", c1, c2)
 	}
 }
 
-func TestGenerateCodeChallenge_不同输入不同输出(t *testing.T) {
+func TestGenerateCodeChallenge_涓嶅悓杈撳叆涓嶅悓杈撳嚭(t *testing.T) {
 	c1 := GenerateCodeChallenge("verifier-1")
 	c2 := GenerateCodeChallenge("verifier-2")
 	if c1 == c2 {
-		t.Error("不同输入应产生不同输出")
+		t.Error("涓嶅悓杈撳叆搴斾骇鐢熶笉鍚岃緭鍑?)
 	}
 }
 
@@ -591,21 +578,19 @@ func TestGenerateCodeChallenge_不同输入不同输出(t *testing.T) {
 // BuildAuthorizationURL
 // ---------------------------------------------------------------------------
 
-func TestBuildAuthorizationURL_参数验证(t *testing.T) {
+func TestBuildAuthorizationURL_鍙傛暟楠岃瘉(t *testing.T) {
 	state := "test-state-123"
 	codeChallenge := "test-challenge-abc"
 
 	authURL := BuildAuthorizationURL(state, codeChallenge)
 
-	// 验证以 AuthorizeURL 开头
-	if !strings.HasPrefix(authURL, AuthorizeURL+"?") {
-		t.Errorf("URL 应以 %s? 开头: got %s", AuthorizeURL, authURL)
+	// 楠岃瘉浠?AuthorizeURL 寮€澶?	if !strings.HasPrefix(authURL, AuthorizeURL+"?") {
+		t.Errorf("URL 搴斾互 %s? 寮€澶? got %s", AuthorizeURL, authURL)
 	}
 
-	// 解析 URL 并验证参数
-	parsed, err := url.Parse(authURL)
+	// 瑙ｆ瀽 URL 骞堕獙璇佸弬鏁?	parsed, err := url.Parse(authURL)
 	if err != nil {
-		t.Fatalf("解析 URL 失败: %v", err)
+		t.Fatalf("瑙ｆ瀽 URL 澶辫触: %v", err)
 	}
 
 	params := parsed.Query()
@@ -626,27 +611,26 @@ func TestBuildAuthorizationURL_参数验证(t *testing.T) {
 	for key, want := range expectedParams {
 		got := params.Get(key)
 		if got != want {
-			t.Errorf("参数 %s 不匹配: got %q, want %q", key, got, want)
+			t.Errorf("鍙傛暟 %s 涓嶅尮閰? got %q, want %q", key, got, want)
 		}
 	}
 }
 
-func TestBuildAuthorizationURL_参数数量(t *testing.T) {
+func TestBuildAuthorizationURL_鍙傛暟鏁伴噺(t *testing.T) {
 	authURL := BuildAuthorizationURL("s", "c")
 	parsed, err := url.Parse(authURL)
 	if err != nil {
-		t.Fatalf("解析 URL 失败: %v", err)
+		t.Fatalf("瑙ｆ瀽 URL 澶辫触: %v", err)
 	}
 
 	params := parsed.Query()
-	// 应包含 10 个参数
-	expectedCount := 10
+	// 搴斿寘鍚?10 涓弬鏁?	expectedCount := 10
 	if len(params) != expectedCount {
-		t.Errorf("参数数量不匹配: got %d, want %d", len(params), expectedCount)
+		t.Errorf("鍙傛暟鏁伴噺涓嶅尮閰? got %d, want %d", len(params), expectedCount)
 	}
 }
 
-func TestBuildAuthorizationURL_特殊字符编码(t *testing.T) {
+func TestBuildAuthorizationURL_鐗规畩瀛楃缂栫爜(t *testing.T) {
 	state := "state+with/special=chars"
 	codeChallenge := "challenge+value"
 
@@ -654,54 +638,53 @@ func TestBuildAuthorizationURL_特殊字符编码(t *testing.T) {
 
 	parsed, err := url.Parse(authURL)
 	if err != nil {
-		t.Fatalf("解析 URL 失败: %v", err)
+		t.Fatalf("瑙ｆ瀽 URL 澶辫触: %v", err)
 	}
 
-	// 解析后应正确还原特殊字符
+	// 瑙ｆ瀽鍚庡簲姝ｇ‘杩樺師鐗规畩瀛楃
 	if got := parsed.Query().Get("state"); got != state {
-		t.Errorf("state 参数编码/解码不匹配: got %q, want %q", got, state)
+		t.Errorf("state 鍙傛暟缂栫爜/瑙ｇ爜涓嶅尮閰? got %q, want %q", got, state)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// 常量值验证
-// ---------------------------------------------------------------------------
+// 甯搁噺鍊奸獙璇?// ---------------------------------------------------------------------------
 
-func TestConstants_值正确(t *testing.T) {
+func TestConstants_鍊兼纭?t *testing.T) {
 	if AuthorizeURL != "https://accounts.google.com/o/oauth2/v2/auth" {
-		t.Errorf("AuthorizeURL 不匹配: got %s", AuthorizeURL)
+		t.Errorf("AuthorizeURL 涓嶅尮閰? got %s", AuthorizeURL)
 	}
 	if TokenURL != "https://oauth2.googleapis.com/token" {
-		t.Errorf("TokenURL 不匹配: got %s", TokenURL)
+		t.Errorf("TokenURL 涓嶅尮閰? got %s", TokenURL)
 	}
 	if UserInfoURL != "https://www.googleapis.com/oauth2/v2/userinfo" {
-		t.Errorf("UserInfoURL 不匹配: got %s", UserInfoURL)
+		t.Errorf("UserInfoURL 涓嶅尮閰? got %s", UserInfoURL)
 	}
-	if ClientID != "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com" {
-		t.Errorf("ClientID 不匹配: got %s", ClientID)
+	if ClientID != "1gaoge-google-oauth-client-id-placeholder" {
+		t.Errorf("ClientID 涓嶅尮閰? got %s", ClientID)
 	}
 	secret, err := getClientSecret()
 	if err != nil {
-		t.Fatalf("getClientSecret 应返回默认值，但报错: %v", err)
+		t.Fatalf("getClientSecret 搴旇繑鍥為粯璁ゅ€硷紝浣嗘姤閿? %v", err)
 	}
-	if secret != "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" {
-		t.Errorf("默认 client_secret 不匹配: got %s", secret)
+	if secret != "gaoge-google-oauth-client-secret-placeholder" {
+		t.Errorf("榛樿 client_secret 涓嶅尮閰? got %s", secret)
 	}
 	if RedirectURI != "http://localhost:8085/callback" {
-		t.Errorf("RedirectURI 不匹配: got %s", RedirectURI)
+		t.Errorf("RedirectURI 涓嶅尮閰? got %s", RedirectURI)
 	}
 	if GetUserAgent() != "antigravity/1.23.2 windows/amd64" {
-		t.Errorf("UserAgent 不匹配: got %s", GetUserAgent())
+		t.Errorf("UserAgent 涓嶅尮閰? got %s", GetUserAgent())
 	}
 	if SessionTTL != 30*time.Minute {
-		t.Errorf("SessionTTL 不匹配: got %v", SessionTTL)
+		t.Errorf("SessionTTL 涓嶅尮閰? got %v", SessionTTL)
 	}
 	if URLAvailabilityTTL != 5*time.Minute {
-		t.Errorf("URLAvailabilityTTL 不匹配: got %v", URLAvailabilityTTL)
+		t.Errorf("URLAvailabilityTTL 涓嶅尮閰? got %v", URLAvailabilityTTL)
 	}
 }
 
-func TestScopes_包含必要范围(t *testing.T) {
+func TestScopes_鍖呭惈蹇呰鑼冨洿(t *testing.T) {
 	expectedScopes := []string{
 		"https://www.googleapis.com/auth/cloud-platform",
 		"https://www.googleapis.com/auth/userinfo.email",
@@ -712,7 +695,7 @@ func TestScopes_包含必要范围(t *testing.T) {
 
 	for _, scope := range expectedScopes {
 		if !strings.Contains(Scopes, scope) {
-			t.Errorf("Scopes 缺少 %s", scope)
+			t.Errorf("Scopes 缂哄皯 %s", scope)
 		}
 	}
 }

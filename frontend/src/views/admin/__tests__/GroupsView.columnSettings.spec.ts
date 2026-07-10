@@ -15,6 +15,7 @@ const {
   showSuccess,
   isCurrentStep,
   nextStep,
+  createGroupAPI,
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
   getAllGroups: vi.fn(),
@@ -26,6 +27,7 @@ const {
   showSuccess: vi.fn(),
   isCurrentStep: vi.fn(),
   nextStep: vi.fn(),
+  createGroupAPI: vi.fn(),
 }))
 
 const messages: Record<string, string> = {
@@ -40,6 +42,7 @@ const messages: Record<string, string> = {
   'admin.groups.columns.usage': 'Usage',
   'admin.groups.columns.status': 'Status',
   'admin.groups.columns.actions': 'Actions',
+  'admin.groups.imagePricing.stripCodexImageGenerationTool': 'Strip group image-generation tools',
 }
 
 vi.mock('@/api/admin', () => ({
@@ -50,7 +53,7 @@ vi.mock('@/api/admin', () => ({
       getModelsListCandidates,
       getUsageSummary,
       getCapacitySummary,
-      create: vi.fn(),
+      create: createGroupAPI,
       update: vi.fn(),
       delete: vi.fn(),
       updateSortOrder: vi.fn(),
@@ -99,6 +102,7 @@ const createGroup = (overrides: Partial<AdminGroup> = {}): AdminGroup => ({
   weekly_limit_usd: null,
   monthly_limit_usd: null,
   allow_image_generation: false,
+  strip_codex_image_generation_tool: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null,
@@ -231,6 +235,7 @@ describe('admin GroupsView column settings', () => {
     showSuccess.mockReset()
     isCurrentStep.mockReset()
     nextStep.mockReset()
+    createGroupAPI.mockReset()
 
     listGroups.mockResolvedValue({
       items: [createGroup()],
@@ -245,6 +250,7 @@ describe('admin GroupsView column settings', () => {
     getCapacitySummary.mockResolvedValue([])
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
     isCurrentStep.mockReturnValue(false)
+    createGroupAPI.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -308,8 +314,11 @@ describe('admin GroupsView column settings', () => {
     expect(localStorage.getItem('group-hidden-columns')).toBe(JSON.stringify(['usage']))
   })
 
-  it('skips hidden usage and capacity fetches until those columns are shown', async () => {
-    localStorage.setItem('group-hidden-columns', JSON.stringify(['usage', 'capacity']))
+  it('skips usage and capacity fetches until consuming columns are shown', async () => {
+    localStorage.setItem(
+      'group-hidden-columns',
+      JSON.stringify(['billing_type', 'usage', 'capacity']),
+    )
 
     const wrapper = await mountView()
 
@@ -324,5 +333,34 @@ describe('admin GroupsView column settings', () => {
     await clickColumnToggle(wrapper, 'Capacity')
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
     expect(getCapacitySummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows and submits the image-tool strip flag only for OpenAI groups', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-tour="groups-create-btn"]').trigger('click')
+    expect(wrapper.text()).not.toContain('Strip group image-generation tools')
+
+    await wrapper.get('[data-tour="group-form-platform"]').setValue('openai')
+    await flushPromises()
+    const stripToggle = wrapper.get(
+      '[data-tour="group-create-strip-image-tool-toggle"]',
+    )
+    expect(stripToggle.attributes('role')).toBe('switch')
+    expect(stripToggle.attributes('aria-checked')).toBe('false')
+    expect(stripToggle.find('input[type="checkbox"]').exists()).toBe(false)
+
+    await stripToggle.trigger('click')
+    expect(stripToggle.attributes('aria-checked')).toBe('true')
+    await wrapper.get('[data-tour="group-form-name"]').setValue('OpenAI text only')
+    await wrapper.get('#create-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(createGroupAPI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform: 'openai',
+        strip_codex_image_generation_tool: true,
+      }),
+    )
   })
 })

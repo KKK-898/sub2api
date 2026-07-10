@@ -120,6 +120,82 @@ describe('API Client', () => {
       const config = adapter.mock.calls[0][0]
       expect(config.withCredentials).toBe(true)
     })
+
+    it('adds idempotency headers to admin write requests', async () => {
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200,
+        data: { code: 0, data: {} },
+        headers: {},
+        config: {},
+        statusText: 'OK',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await apiClient.post('/admin/users/123/balance', {
+        balance: 10,
+        operation: 'add',
+      })
+
+      const config = adapter.mock.calls[0][0]
+      const idempotencyKey = config.headers.get('Idempotency-Key')
+      expect(idempotencyKey).toMatch(/^admin-/)
+      expect(config.headers.get('X-Idempotency-Key')).toBe(idempotencyKey)
+    })
+
+    it('mirrors an existing admin idempotency key instead of replacing it', async () => {
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200,
+        data: { code: 0, data: {} },
+        headers: {},
+        config: {},
+        statusText: 'OK',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await apiClient.post('/admin/data-management/backups', {}, {
+        headers: {
+          'X-Idempotency-Key': 'existing-admin-key',
+        },
+      })
+
+      const config = adapter.mock.calls[0][0]
+      expect(config.headers.get('Idempotency-Key')).toBe('existing-admin-key')
+      expect(config.headers.get('X-Idempotency-Key')).toBe('existing-admin-key')
+    })
+
+    it('does not add idempotency headers to admin read requests', async () => {
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200,
+        data: { code: 0, data: {} },
+        headers: {},
+        config: {},
+        statusText: 'OK',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await apiClient.get('/admin/users')
+
+      const config = adapter.mock.calls[0][0]
+      expect(config.headers.get('Idempotency-Key')).toBeFalsy()
+      expect(config.headers.get('X-Idempotency-Key')).toBeFalsy()
+    })
+
+    it('does not add idempotency headers to non-admin write requests', async () => {
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200,
+        data: { code: 0, data: {} },
+        headers: {},
+        config: {},
+        statusText: 'OK',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await apiClient.post('/payment/orders', { amount: 10 })
+
+      const config = adapter.mock.calls[0][0]
+      expect(config.headers.get('Idempotency-Key')).toBeFalsy()
+      expect(config.headers.get('X-Idempotency-Key')).toBeFalsy()
+    })
   })
 
   // --- 响应拦截器 ---

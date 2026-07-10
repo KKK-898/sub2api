@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -47,11 +48,33 @@ func executeAdminIdempotent(
 		ActorScope:     actorScope,
 		Method:         c.Request.Method,
 		Route:          c.FullPath(),
-		IdempotencyKey: c.GetHeader("Idempotency-Key"),
+		IdempotencyKey: getAdminIdempotencyKey(c),
 		Payload:        payload,
 		RequireKey:     true,
 		TTL:            ttl,
 	}, execute)
+}
+
+func getAdminIdempotencyKey(c *gin.Context) string {
+	key := c.GetHeader("Idempotency-Key")
+	if strings.TrimSpace(key) != "" {
+		return key
+	}
+	return c.GetHeader("X-Idempotency-Key")
+}
+
+func executeAdminIdempotentJSONRequireKey(
+	c *gin.Context,
+	scope string,
+	payload any,
+	ttl time.Duration,
+	execute func(context.Context) (any, error),
+) {
+	if strings.TrimSpace(getAdminIdempotencyKey(c)) == "" {
+		response.ErrorFrom(c, service.ErrIdempotencyKeyRequired)
+		return
+	}
+	executeAdminIdempotentJSON(c, scope, payload, ttl, execute)
 }
 
 func executeAdminIdempotentJSON(

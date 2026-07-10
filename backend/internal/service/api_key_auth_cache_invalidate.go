@@ -2,6 +2,10 @@ package service
 
 import "context"
 
+type apiKeyAuthCacheBatchInvalidator interface {
+	DeleteAuthCachesAndPublish(ctx context.Context, cacheKeys []string) error
+}
+
 // InvalidateAuthCacheByKey 清除指定 API Key 的认证缓存
 func (s *APIKeyService) InvalidateAuthCacheByKey(ctx context.Context, key string) {
 	if key == "" {
@@ -39,10 +43,27 @@ func (s *APIKeyService) deleteAuthCacheByKeys(ctx context.Context, keys []string
 	if len(keys) == 0 {
 		return
 	}
+	cacheKeys := make([]string, 0, len(keys))
 	for _, key := range keys {
 		if key == "" {
 			continue
 		}
-		s.deleteAuthCache(ctx, s.authCacheKey(key))
+		cacheKey := s.authCacheKey(key)
+		cacheKeys = append(cacheKeys, cacheKey)
+		if s.authCacheL1 != nil {
+			s.authCacheL1.Del(cacheKey)
+		}
+	}
+	if len(cacheKeys) == 0 || s.cache == nil {
+		return
+	}
+	if batchCache, ok := s.cache.(apiKeyAuthCacheBatchInvalidator); ok {
+		if err := batchCache.DeleteAuthCachesAndPublish(ctx, cacheKeys); err == nil {
+			return
+		}
+	}
+	for _, cacheKey := range cacheKeys {
+		_ = s.cache.DeleteAuthCache(ctx, cacheKey)
+		_ = s.cache.PublishAuthCacheInvalidation(ctx, cacheKey)
 	}
 }

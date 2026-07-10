@@ -175,7 +175,12 @@ func TestStripOpenAIImageGenerationToolFromRawPayload(t *testing.T) {
 		"model":"gpt-5.4",
 		"tools":[
 			{"type":"function","name":"shell"},
-			{"type":"image_generation","output_format":"png"}
+			{"type":"image_generation","output_format":"png"},
+			{"type":"namespace","name":"image_gen"}
+		],
+		"input":[
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]},
+			{"type":"additional_tools","tools":[{"type":"namespace","name":"image_gen"}]}
 		],
 		"tool_choice":{"type":"image_generation"}
 	}`)
@@ -185,6 +190,8 @@ func TestStripOpenAIImageGenerationToolFromRawPayload(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.False(t, gjson.GetBytes(updated, `tools.#(type=="image_generation")`).Exists())
+	require.False(t, gjson.GetBytes(updated, `tools.#(name=="image_gen")`).Exists())
+	require.False(t, gjson.GetBytes(updated, `input.#(type=="additional_tools")`).Exists())
 	require.True(t, gjson.GetBytes(updated, `tools.#(type=="function")`).Exists())
 	require.False(t, gjson.GetBytes(updated, "tool_choice").Exists())
 }

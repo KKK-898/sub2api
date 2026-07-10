@@ -99,7 +99,7 @@ gaoge-sub2api:platform-subscription-eligibility-fix-20260704-083710
 SUB2 拉取软件后台内部接口时支持多个后台地址，当前配置为：
 
 ```bash
-https://ruanjianhoutai.gaogeaii.com,https://ruanjianhoutai.gaogeaii.cc,https://ruanjianhoutai.jieyouai.it.com
+${ADMIN_PUBLIC_URL}
 ```
 
 如果第一个域名异常，会继续尝试后面的域名。
@@ -146,15 +146,15 @@ done
 
 ```bash
 PLATFORM_SUBSCRIPTION_BILLING_ENABLED=true
-PLATFORM_SUBSCRIPTION_BILLING_BACKEND_URL=https://ruanjianhoutai.gaogeaii.com,https://ruanjianhoutai.gaogeaii.cc,https://ruanjianhoutai.jieyouai.it.com
+PLATFORM_SUBSCRIPTION_BILLING_BACKEND_URL=${ADMIN_PUBLIC_URL}
 PLATFORM_SUBSCRIPTION_BILLING_INTERNAL_TOKEN=<不要写入文档或提交>
 PLATFORM_SUBSCRIPTION_BILLING_RULES_TTL_SECONDS=600
 PLATFORM_SUBSCRIPTION_BILLING_USER_TTL_SECONDS=120
 PLATFORM_SUBSCRIPTION_BILLING_HTTP_TIMEOUT_SECONDS=3
 
 SOFTWARE_ADMIN_ONLINE_PAYMENT_CONFIG_URL=
-SOFTWARE_ADMIN_API_BASE_URL=https://ruanjianhoutai.jieyouai.it.com
-PAYMENT_BACKUP_BRIDGE_URL=https://payi.jieyouai.it.com/pay
+SOFTWARE_ADMIN_API_BASE_URL=${ADMIN_PUBLIC_URL}/api
+PAYMENT_BACKUP_BRIDGE_URL=${PAY_PUBLIC_URL}/pay
 PAYMENT_BACKUP_BRIDGE_SECRET=<不要写入文档或提交>
 ```
 
@@ -582,9 +582,7 @@ curl -sS -m 8 \
 ```bash
 docker exec -e TOKEN="$TOKEN" sub2api sh -lc '
 for url in \
-  https://ruanjianhoutai.gaogeaii.com \
-  https://ruanjianhoutai.gaogeaii.cc \
-  https://ruanjianhoutai.jieyouai.it.com
+  "${ADMIN_PUBLIC_URL}"
 do
   echo "$url"
   wget -q -T 8 --header="Authorization: Bearer $TOKEN" \

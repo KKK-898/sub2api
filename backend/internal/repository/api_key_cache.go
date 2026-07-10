@@ -17,6 +17,7 @@ const (
 	apiKeyRateLimitDuration    = 24 * time.Hour
 	apiKeyAuthCachePrefix      = "apikey:auth:"
 	authCacheInvalidateChannel = "auth:cache:invalidate"
+	apiKeyAuthCacheBatchSize   = 256
 )
 
 // apiKeyRateLimitKey generates the Redis key for API key creation rate limiting.
@@ -92,6 +93,37 @@ func (c *apiKeyCache) SetAuthCache(ctx context.Context, key string, entry *servi
 
 func (c *apiKeyCache) DeleteAuthCache(ctx context.Context, key string) error {
 	return c.rdb.Del(ctx, apiKeyAuthCacheKey(key)).Err()
+}
+
+// DeleteAuthCachesAndPublish removes many L2 auth snapshots and broadcasts the
+// matching L1 invalidations with a bounded number of Redis round trips.
+func (c *apiKeyCache) DeleteAuthCachesAndPublish(ctx context.Context, cacheKeys []string) error {
+	for start := 0; start < len(cacheKeys); start += apiKeyAuthCacheBatchSize {
+		end := min(start+apiKeyAuthCacheBatchSize, len(cacheKeys))
+		batch := cacheKeys[start:end]
+		redisKeys := make([]string, 0, len(batch))
+		validCacheKeys := make([]string, 0, len(batch))
+		for _, cacheKey := range batch {
+			if cacheKey == "" {
+				continue
+			}
+			redisKeys = append(redisKeys, apiKeyAuthCacheKey(cacheKey))
+			validCacheKeys = append(validCacheKeys, cacheKey)
+		}
+		if len(redisKeys) == 0 {
+			continue
+		}
+
+		pipe := c.rdb.Pipeline()
+		pipe.Del(ctx, redisKeys...)
+		for _, cacheKey := range validCacheKeys {
+			pipe.Publish(ctx, authCacheInvalidateChannel, cacheKey)
+		}
+		if _, err := pipe.Exec(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // PublishAuthCacheInvalidation publishes a cache invalidation message to all instances
