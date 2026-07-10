@@ -15,6 +15,7 @@ This directory records all Gaoge custom patches applied on top of official sub2.
 - `009-group-auth-cache-invalidation-batching.md`: batched Redis invalidation for large-group admin updates.
 - `010-image-tool-strip-gate-precedence.md`: evaluates image permissions after effective image-tool stripping across HTTP, passthrough, and WebSocket flows.
 - `011-custom-build-self-update-guard.md`: blocks official in-place update and rollback paths in custom images.
+- `012-codex-model-manifest-token-selection.md`: Gaoge-only compatibility selector for live Codex manifests; not an official Sub2API fix.
 
 ## Update Rule
 
