@@ -6,7 +6,46 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+type codexModelsSchedulerCache struct {
+	snapshot []*Account
+	accounts map[int64]*Account
+}
+
+func (c *codexModelsSchedulerCache) GetSnapshot(context.Context, SchedulerBucket) ([]*Account, bool, error) {
+	return c.snapshot, true, nil
+}
+
+func (c *codexModelsSchedulerCache) SetSnapshot(context.Context, SchedulerBucket, []Account) error {
+	return nil
+}
+
+func (c *codexModelsSchedulerCache) GetAccount(_ context.Context, accountID int64) (*Account, error) {
+	return c.accounts[accountID], nil
+}
+
+func (c *codexModelsSchedulerCache) SetAccount(context.Context, *Account) error { return nil }
+func (c *codexModelsSchedulerCache) DeleteAccount(context.Context, int64) error { return nil }
+func (c *codexModelsSchedulerCache) UpdateLastUsed(context.Context, map[int64]time.Time) error {
+	return nil
+}
+func (c *codexModelsSchedulerCache) TryLockBucket(context.Context, SchedulerBucket, time.Duration) (bool, error) {
+	return true, nil
+}
+func (c *codexModelsSchedulerCache) UnlockBucket(context.Context, SchedulerBucket) error {
+	return nil
+}
+func (c *codexModelsSchedulerCache) ListBuckets(context.Context) ([]SchedulerBucket, error) {
+	return nil, nil
+}
+func (c *codexModelsSchedulerCache) GetOutboxWatermark(context.Context) (int64, error) {
+	return 0, nil
+}
+func (c *codexModelsSchedulerCache) SetOutboxWatermark(context.Context, int64) error {
+	return nil
+}
 
 func newCodexModelsTestAccount() *Account {
 	return &Account{
@@ -50,6 +89,50 @@ func TestSelectCodexModelsAccountSkipsAPIKeyAccount(t *testing.T) {
 	}
 	if account == nil || account.ID != 2 {
 		t.Fatalf("selected account: got %#v, want OAuth account 2", account)
+	}
+}
+
+func TestSelectCodexModelsAccountReloadsOAuthTokenOmittedFromSchedulerCache(t *testing.T) {
+	const accountID int64 = 42
+	cacheAccount := &Account{
+		ID:          accountID,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Priority:    1,
+		Credentials: map[string]any{"oauth_type": "chatgpt"},
+	}
+	fullAccount := *cacheAccount
+	fullAccount.Credentials = map[string]any{
+		"oauth_type":    "chatgpt",
+		"access_token":  "database-access-token",
+		"refresh_token": "database-refresh-token",
+	}
+
+	repo := stubOpenAIAccountRepo{accounts: []Account{fullAccount}}
+	cache := &codexModelsSchedulerCache{
+		snapshot: []*Account{cacheAccount},
+		accounts: map[int64]*Account{accountID: cacheAccount},
+	}
+	service := &OpenAIGatewayService{
+		accountRepo:       repo,
+		schedulerSnapshot: NewSchedulerSnapshotService(cache, nil, repo, nil, nil),
+	}
+
+	groupID := int64(3)
+	account, err := service.SelectCodexModelsAccount(context.Background(), &groupID)
+	if err != nil {
+		t.Fatalf("SelectCodexModelsAccount returned error: %v", err)
+	}
+	if account == nil || account.ID != accountID {
+		t.Fatalf("selected account: got %#v, want account %d", account, accountID)
+	}
+	if got := account.GetOpenAIAccessToken(); got != "database-access-token" {
+		t.Fatalf("selected account token: got %q, want database credential", got)
+	}
+	if got := cacheAccount.GetOpenAIAccessToken(); got != "" {
+		t.Fatalf("scheduler cache must remain credential-free, got token %q", got)
 	}
 }
 

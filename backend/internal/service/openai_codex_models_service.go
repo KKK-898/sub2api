@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -42,9 +43,23 @@ func (s *OpenAIGatewayService) SelectCodexModelsAccount(ctx context.Context, gro
 			return nil, ErrNoAvailableAccounts
 		}
 
-		credAccount, err := resolveCredentialAccount(ctx, s.accountRepo, account)
+		// Scheduler snapshots deliberately omit OAuth access/refresh tokens. Reload
+		// only the dynamically selected account from the authoritative repository
+		// before checking credentials; do not put secrets into the scheduler cache.
+		fullAccount := account
+		if s.accountRepo != nil {
+			fullAccount, err = s.accountRepo.GetByID(ctx, account.ID)
+			if err != nil {
+				return nil, fmt.Errorf("load selected Codex models account %d: %w", account.ID, err)
+			}
+			if fullAccount == nil {
+				return nil, fmt.Errorf("load selected Codex models account %d: account not found", account.ID)
+			}
+		}
+
+		credAccount, err := resolveCredentialAccount(ctx, s.accountRepo, fullAccount)
 		if err == nil && credAccount != nil && strings.TrimSpace(credAccount.GetOpenAIAccessToken()) != "" {
-			return account, nil
+			return fullAccount, nil
 		}
 
 		excludedIDs[account.ID] = struct{}{}
