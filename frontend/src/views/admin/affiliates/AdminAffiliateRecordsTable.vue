@@ -9,6 +9,12 @@
           </div>
           <input v-model="filters.start_at" type="date" class="input w-full sm:w-44" :title="t('admin.affiliates.records.startAt')" @change="reloadFromFirstPage" />
           <input v-model="filters.end_at" type="date" class="input w-full sm:w-44" :title="t('admin.affiliates.records.endAt')" @change="reloadFromFirstPage" />
+          <select v-if="props.type === 'withdrawals'" v-model="filters.status" class="input w-full sm:w-40" @change="reloadFromFirstPage">
+            <option value="">全部状态</option>
+            <option value="pending">待处理</option>
+            <option value="completed">已完成</option>
+            <option value="cancelled">已取消</option>
+          </select>
           <button class="btn btn-secondary px-2 md:px-3" :disabled="loading" :title="t('common.refresh')" @click="loadRecords">
             <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
           </button>
@@ -21,7 +27,7 @@
           :data="records"
           :loading="loading"
           :server-side-sort="true"
-          default-sort-key="created_at"
+          :default-sort-key="props.type === 'withdrawals' ? 'requested_at' : 'created_at'"
           default-sort-order="desc"
           :sort-storage-key="sortStorageKey"
           @sort="handleSort"
@@ -95,6 +101,34 @@
           <template #cell-history_quota_after="{ row }">
             <NullableAmountText :value="row.history_quota_after" />
           </template>
+          <template #cell-quota_amount="{ row }">
+            <AmountText :value="row.quota_amount" strong />
+          </template>
+          <template #cell-cash_amount="{ row }">
+            <span class="text-sm font-semibold text-emerald-600 dark:text-emerald-400">¥{{ formatAmount(row.cash_amount) }}</span>
+          </template>
+          <template #cell-status="{ row }">
+            <span
+              class="inline-flex rounded px-2 py-1 text-xs font-medium"
+              :class="withdrawalStatusClass(row.status)"
+            >
+              {{ withdrawalStatusLabel(row.status) }}
+            </span>
+          </template>
+          <template #cell-requested_at="{ row }">
+            <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(row.requested_at) }}</span>
+          </template>
+          <template #cell-actions="{ row }">
+            <div v-if="row.status === 'pending'" class="flex items-center gap-2">
+              <button class="btn btn-primary btn-sm" :disabled="processingWithdrawalId === row.id" @click="processWithdrawal(row, true)">
+                完成
+              </button>
+              <button class="btn btn-secondary btn-sm" :disabled="processingWithdrawalId === row.id" @click="processWithdrawal(row, false)">
+                取消
+              </button>
+            </div>
+            <span v-else class="text-xs text-gray-400">已处理</span>
+          </template>
           <template #cell-created_at="{ row }">
             <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(row.created_at) }}</span>
           </template>
@@ -153,13 +187,13 @@ import Icon from '@/components/icons/Icon.vue'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
 import type { Column } from '@/components/common/types'
 import { useAppStore } from '@/stores/app'
-import { affiliatesAPI, type AffiliateInviteRecord, type AffiliateRebateRecord, type AffiliateTransferRecord, type AffiliateUserOverview, type ListAffiliateRecordsParams } from '@/api/admin/affiliates'
+import { affiliatesAPI, type AffiliateInviteRecord, type AffiliateRebateRecord, type AffiliateTransferRecord, type AffiliateWithdrawal, type AffiliateUserOverview, type ListAffiliateRecordsParams } from '@/api/admin/affiliates'
 import type { PaginatedResponse } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDisplayDateTime } from '@/utils/format'
 
-type RecordType = 'invites' | 'rebates' | 'transfers'
-type AffiliateRecord = AffiliateInviteRecord | AffiliateRebateRecord | AffiliateTransferRecord
+type RecordType = 'invites' | 'rebates' | 'transfers' | 'withdrawals'
+type AffiliateRecord = AffiliateInviteRecord | AffiliateRebateRecord | AffiliateTransferRecord | AffiliateWithdrawal
 
 const props = defineProps<{
   type: RecordType
@@ -169,11 +203,12 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const loading = ref(false)
 const records = ref<AffiliateRecord[]>([])
-const filters = reactive({ search: '', start_at: '', end_at: '' })
+const filters = reactive({ search: '', start_at: '', end_at: '', status: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const overviewDialog = ref(false)
 const overviewLoading = ref(false)
 const selectedOverview = ref<AffiliateUserOverview | null>(null)
+const processingWithdrawalId = ref<number | null>(null)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const columns = computed<Column[]>(() => {
@@ -197,6 +232,16 @@ const columns = computed<Column[]>(() => {
       { key: 'payment_type', label: t('admin.affiliates.records.paymentType'), sortable: true },
       { key: 'order_status', label: t('admin.affiliates.records.orderStatus'), sortable: true },
       { key: 'created_at', label: t('admin.affiliates.records.rebatedAt'), sortable: true },
+    ]
+  }
+  if (props.type === 'withdrawals') {
+    return [
+      { key: 'user', label: '申请用户' },
+      { key: 'quota_amount', label: '奖励额度' },
+      { key: 'cash_amount', label: '折现人民币' },
+      { key: 'status', label: '状态' },
+      { key: 'requested_at', label: '申请时间' },
+      { key: 'actions', label: '操作' },
     ]
   }
   return [
@@ -249,6 +294,7 @@ function buildParams(): ListAffiliateRecordsParams {
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order,
     timezone: userTimezone(),
+    status: props.type === 'withdrawals' ? filters.status || undefined : undefined,
   }
 }
 
@@ -259,7 +305,44 @@ async function fetchRecords(params: ListAffiliateRecordsParams): Promise<Paginat
   if (props.type === 'rebates') {
     return affiliatesAPI.listRebateRecords(params)
   }
+  if (props.type === 'withdrawals') {
+    return affiliatesAPI.listWithdrawals(params)
+  }
   return affiliatesAPI.listTransferRecords(params)
+}
+
+function withdrawalStatusLabel(status: string): string {
+  if (status === 'completed') return '已完成'
+  if (status === 'cancelled') return '已取消'
+  return '待处理'
+}
+
+function withdrawalStatusClass(status: string): string {
+  if (status === 'completed') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  if (status === 'cancelled') return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-dark-300'
+  return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+}
+
+async function processWithdrawal(row: AffiliateWithdrawal, complete: boolean) {
+  const action = complete ? '完成' : '取消'
+  const consequence = complete
+    ? `确认已向用户 #${row.user_id} 支付 ¥${formatAmount(row.cash_amount)}？`
+    : `确认取消该提现并退回 $${formatAmount(row.quota_amount)} 奖励额度？`
+  if (!window.confirm(consequence)) return
+  processingWithdrawalId.value = row.id
+  try {
+    if (complete) {
+      await affiliatesAPI.completeWithdrawal(row.id)
+    } else {
+      await affiliatesAPI.cancelWithdrawal(row.id)
+    }
+    appStore.showSuccess(`提现申请已${action}`)
+    await loadRecords()
+  } catch (error) {
+    appStore.showError(extractI18nErrorMessage(error, t, 'admin.affiliates.errors', t('common.error')))
+  } finally {
+    processingWithdrawalId.value = null
+  }
 }
 
 async function loadRecords() {

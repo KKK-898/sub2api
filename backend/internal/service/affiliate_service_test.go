@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -22,28 +23,54 @@ func TestResolveRebateRatePercent_PerUserOverride(t *testing.T) {
 	svc := &AffiliateService{}
 
 	// nil exclusive rate → falls back to global default (20%)
-	require.InDelta(t, AffiliateRebateRateDefault,
-		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{}), 1e-9)
+	require.InDelta(t, AffiliateRebateTier0To5Default,
+		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{}, 0), 1e-9)
 
 	// exclusive rate set → overrides global
 	rate := 50.0
 	require.InDelta(t, 50.0,
-		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{AffRebateRatePercent: &rate}), 1e-9)
+		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{AffRebateRatePercent: &rate}, 0), 1e-9)
 
 	// exclusive rate 0 → returns 0 (no rebate, intentional)
 	zero := 0.0
 	require.InDelta(t, 0.0,
-		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{AffRebateRatePercent: &zero}), 1e-9)
+		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{AffRebateRatePercent: &zero}, 0), 1e-9)
 
 	// exclusive rate above max → clamped to Max
 	tooHigh := 250.0
 	require.InDelta(t, AffiliateRebateRateMax,
-		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{AffRebateRatePercent: &tooHigh}), 1e-9)
+		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{AffRebateRatePercent: &tooHigh}, 0), 1e-9)
 
 	// exclusive rate below min → clamped to Min
 	tooLow := -5.0
 	require.InDelta(t, AffiliateRebateRateMin,
-		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{AffRebateRatePercent: &tooLow}), 1e-9)
+		svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{AffRebateRatePercent: &tooLow}, 0), 1e-9)
+}
+
+func TestResolveRebateRatePercent_TierBoundaries(t *testing.T) {
+	t.Parallel()
+	svc := &AffiliateService{}
+	tests := []struct {
+		active int
+		want   float64
+	}{
+		{active: 0, want: AffiliateRebateTier0To5Default},
+		{active: 5, want: AffiliateRebateTier0To5Default},
+		{active: 6, want: AffiliateRebateTier6To10Default},
+		{active: 10, want: AffiliateRebateTier6To10Default},
+		{active: 11, want: AffiliateRebateTier11To20Default},
+		{active: 20, want: AffiliateRebateTier11To20Default},
+		{active: 21, want: AffiliateRebateTier21PlusDefault},
+		{active: 100, want: AffiliateRebateTier21PlusDefault},
+	}
+	for _, tt := range tests {
+		require.InDelta(t, tt.want, svc.resolveRebateRatePercent(context.Background(), &AffiliateSummary{}, tt.active), 1e-9)
+	}
+}
+
+func TestAffiliateWithdrawalCashRate(t *testing.T) {
+	t.Parallel()
+	require.InDelta(t, 0.20, AffiliateWithdrawalCashRate, 1e-9)
 }
 
 // TestIsEnabled_NilSettingServiceReturnsDefault verifies that IsEnabled
@@ -87,6 +114,99 @@ func TestMaskEmail(t *testing.T) {
 	require.Equal(t, "a***@g***.com", maskEmail("alice@gmail.com"))
 	require.Equal(t, "x***@d***", maskEmail("x@domain"))
 	require.Equal(t, "", maskEmail(""))
+}
+
+func TestAffiliateInviteeStatusAt(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-14*24*time.Hour - 23*time.Hour)
+	exactlyFifteenDays := now.Add(-15 * 24 * time.Hour)
+	olderThanFifteenDays := exactlyFifteenDays.Add(-time.Second)
+	recentBoundAt := recent
+	oldBoundAt := olderThanFifteenDays
+
+	tests := []struct {
+		name     string
+		invitee  AffiliateInvitee
+		expected string
+	}{
+		{
+			name: "paid threshold with recent use is active",
+			invitee: AffiliateInvitee{
+				LastUsedAt: &recent,
+				TotalPaid:  AffiliateInviteePaidThresholdCNY,
+			},
+			expected: AffiliateInviteeStatusActive,
+		},
+		{
+			name: "redeemed threshold with recent use is active",
+			invitee: AffiliateInvitee{
+				LastUsedAt:         &recent,
+				TotalRedeemedQuota: AffiliateInviteeRedeemedThresholdUSD,
+			},
+			expected: AffiliateInviteeStatusActive,
+		},
+		{
+			name: "below both thresholds with recent use is pending",
+			invitee: AffiliateInvitee{
+				LastUsedAt:         &recent,
+				TotalPaid:          AffiliateInviteePaidThresholdCNY - 0.01,
+				TotalRedeemedQuota: AffiliateInviteeRedeemedThresholdUSD - 0.01,
+			},
+			expected: AffiliateInviteeStatusPending,
+		},
+		{
+			name: "exactly fifteen days is not yet invalid",
+			invitee: AffiliateInvitee{
+				LastUsedAt: &exactlyFifteenDays,
+				TotalPaid:  AffiliateInviteePaidThresholdCNY,
+			},
+			expected: AffiliateInviteeStatusActive,
+		},
+		{
+			name: "qualified invitee becomes invalid after fifteen days",
+			invitee: AffiliateInvitee{
+				LastUsedAt:         &olderThanFifteenDays,
+				TotalPaid:          AffiliateInviteePaidThresholdCNY * 10,
+				TotalRedeemedQuota: AffiliateInviteeRedeemedThresholdUSD * 10,
+			},
+			expected: AffiliateInviteeStatusInvalid,
+		},
+		{
+			name: "recent use overrides an old binding date",
+			invitee: AffiliateInvitee{
+				BoundAt:    &oldBoundAt,
+				LastUsedAt: &recent,
+				TotalPaid:  AffiliateInviteePaidThresholdCNY,
+			},
+			expected: AffiliateInviteeStatusActive,
+		},
+		{
+			name: "never used invitee falls back to recent binding date",
+			invitee: AffiliateInvitee{
+				BoundAt:   &recentBoundAt,
+				TotalPaid: AffiliateInviteePaidThresholdCNY,
+			},
+			expected: AffiliateInviteeStatusActive,
+		},
+		{
+			name: "never used invitee expires from binding date",
+			invitee: AffiliateInvitee{
+				BoundAt:   &oldBoundAt,
+				TotalPaid: AffiliateInviteePaidThresholdCNY,
+			},
+			expected: AffiliateInviteeStatusInvalid,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.expected, affiliateInviteeStatusAt(test.invitee, now))
+		})
+	}
 }
 
 func TestIsValidAffiliateCodeFormat(t *testing.T) {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -211,6 +212,48 @@ func (h *UserHandler) GetAffiliate(c *gin.Context) {
 	response.Success(c, detail)
 }
 
+type BindAffiliateInviterRequest struct {
+	Inviter       string `json:"inviter"`
+	InviterUserID *int64 `json:"inviter_user_id"`
+	AffCode       string `json:"aff_code"`
+}
+
+// BindAffiliateInviter permanently binds the current account to one inviter.
+// It accepts either a numeric user ID or an affiliate code.
+func (h *UserHandler) BindAffiliateInviter(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	var req BindAffiliateInviterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	identifier := strings.TrimSpace(req.Inviter)
+	if identifier == "" {
+		identifier = strings.TrimSpace(req.AffCode)
+	}
+	if identifier == "" && req.InviterUserID != nil {
+		identifier = strconv.FormatInt(*req.InviterUserID, 10)
+	}
+	if identifier == "" {
+		response.BadRequest(c, "inviter is required")
+		return
+	}
+	if err := h.affiliateService.BindInviter(c.Request.Context(), subject.UserID, identifier); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	detail, err := h.affiliateService.GetAffiliateDetail(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, detail)
+}
+
 // TransferAffiliateQuota transfers all available affiliate quota into current balance.
 // POST /api/v1/user/aff/transfer
 func (h *UserHandler) TransferAffiliateQuota(c *gin.Context) {
@@ -230,6 +273,22 @@ func (h *UserHandler) TransferAffiliateQuota(c *gin.Context) {
 		"transferred_quota": transferred,
 		"balance":           balance,
 	})
+}
+
+// RequestAffiliateWithdrawal reserves all available reward quota and creates a
+// manual cash withdrawal request using the server-defined conversion rate.
+func (h *UserHandler) RequestAffiliateWithdrawal(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	withdrawal, err := h.affiliateService.RequestAffiliateWithdrawal(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, withdrawal)
 }
 
 type StartIdentityBindingRequest struct {

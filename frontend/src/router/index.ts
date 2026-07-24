@@ -614,6 +614,18 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'admin.affiliates.transfersDescription'
     }
   },
+  {
+    path: '/admin/affiliates/withdrawals',
+    name: 'AdminAffiliateWithdrawals',
+    component: () => import('@/views/admin/affiliates/AdminAffiliateWithdrawalsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Affiliate Withdrawals',
+      titleKey: 'nav.affiliateWithdrawals',
+      descriptionKey: 'admin.affiliates.withdrawalsDescription'
+    }
+  },
 
 
   // ==================== Payment Admin Routes ====================

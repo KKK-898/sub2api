@@ -384,6 +384,7 @@ export default {
     affiliateInviteRecords: '邀请记录',
     affiliateRebateRecords: '返利记录',
     affiliateTransferRecords: '提取记录',
+    affiliateWithdrawals: '提现申请',
     profile: '个人资料',
     users: '用户管理',
     groups: '分组管理',
@@ -1794,6 +1795,7 @@ export default {
       invitesDescription: '查看全站邀请关系和被邀请用户累计返利',
       rebatesDescription: '查看每一笔产生返利的充值订单',
       transfersDescription: '查看返利额度转入账户余额的提取流水',
+      withdrawalsDescription: '审核奖励额度折算现金的提现申请',
       errors: {
         loadFailed: '加载邀请返利记录失败'
       },
@@ -5631,6 +5633,8 @@ export default {
           enabledHint: '关闭后用户菜单中的邀请页面入口隐藏、注册时忽略邀请码、新充值不再产生返利。已有返利额度仍可转入余额。',
           rebateRate: '全局返利比例',
           rebateRateHint: '充值后返给邀请人的默认比例（0-100%，例如填写 10 表示返利 10%）。',
+          rebateTiers: '阶梯返利比例',
+          rebateTiersHint: '按当前有效邀请人数匹配返利档位。修改后仅影响新产生的返利，历史记录保持原比例。',
           freezeHours: '返利冻结期（小时）',
           freezeHoursDesc: '新产生的返利将在冻结期内无法提现。0 = 不冻结。',
           durationDays: '返利有效期（天）',

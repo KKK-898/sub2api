@@ -811,6 +811,10 @@ func TestAPIContracts(t *testing.T) {
 					"auth_source_default_wechat_platform_quotas": null,
 					"auth_source_default_dingtalk_platform_quotas": null,
 					"affiliate_rebate_rate": 20,
+					"affiliate_rebate_tier_0_5": 5,
+					"affiliate_rebate_tier_6_10": 10,
+					"affiliate_rebate_tier_11_20": 15,
+					"affiliate_rebate_tier_21_plus": 20,
 					"affiliate_rebate_freeze_hours": 0,
 					"affiliate_rebate_duration_days": 0,
 					"affiliate_rebate_per_invitee_cap": 0,
@@ -1057,6 +1061,10 @@ func TestAPIContracts(t *testing.T) {
 					"default_concurrency": 0,
 					"default_balance": 0,
 					"affiliate_rebate_rate": 20,
+					"affiliate_rebate_tier_0_5": 5,
+					"affiliate_rebate_tier_6_10": 10,
+					"affiliate_rebate_tier_11_20": 15,
+					"affiliate_rebate_tier_21_plus": 20,
 					"affiliate_rebate_freeze_hours": 0,
 					"affiliate_rebate_duration_days": 0,
 					"affiliate_rebate_per_invitee_cap": 0,
@@ -2443,6 +2451,10 @@ func (r *stubUsageLogRepo) GetUserStatsAggregated(ctx context.Context, userID in
 		TotalActualCost:          totalActualCost,
 		AverageDurationMs:        avgDuration,
 	}, nil
+}
+
+func (r *stubUsageLogRepo) GetPlatformSubscriptionUsageStats(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (r *stubUsageLogRepo) GetAPIKeyStatsAggregated(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {

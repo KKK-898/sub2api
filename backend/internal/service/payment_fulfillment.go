@@ -296,11 +296,12 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 
 	switch action {
 	case redeemActionSkipCompleted:
-		if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
+		if err := s.markCompleted(ctx, o, "RECHARGE_SUCCESS"); err != nil {
 			return err
 		}
 		// Code already created and redeemed — just mark completed
-		return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
+		s.applyAffiliateRebateBestEffort(ctx, o)
+		return nil
 	case redeemActionCreate:
 		rc := &RedeemCode{Code: o.RechargeCode, Type: RedeemTypeBalance, Value: o.Amount, Status: StatusUnused}
 		if err := s.redeemService.CreateCode(ctx, rc); err != nil {
@@ -312,10 +313,11 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 	if _, err := s.redeemService.Redeem(ContextSkipRedeemAffiliate(ctx), o.UserID, o.RechargeCode); err != nil {
 		return fmt.Errorf("redeem balance: %w", err)
 	}
-	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
+	if err := s.markCompleted(ctx, o, "RECHARGE_SUCCESS"); err != nil {
 		return err
 	}
-	return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
+	s.applyAffiliateRebateBestEffort(ctx, o)
+	return nil
 }
 
 func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrder, auditAction string) error {
@@ -544,6 +546,71 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 		return fmt.Errorf("commit affiliate rebate tx: %w", err)
 	}
 	return nil
+}
+
+func (s *PaymentService) applyAffiliateRebateBestEffort(ctx context.Context, o *dbent.PaymentOrder) {
+	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
+		slog.Warn("affiliate rebate deferred after recharge completed",
+			"order_id", o.ID,
+			"user_id", o.UserID,
+			"error", err,
+		)
+	}
+}
+
+// ReconcilePendingAffiliateRebates retries completed balance orders that have
+// no terminal affiliate audit. The order-level claim makes retries idempotent.
+func (s *PaymentService) ReconcilePendingAffiliateRebates(ctx context.Context, limit int) (int, error) {
+	if s == nil || s.entClient == nil || s.affiliateService == nil {
+		return 0, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.entClient.QueryContext(ctx, `
+SELECT po.id
+FROM payment_orders po
+WHERE po.status = $1
+  AND po.order_type = $2
+  AND po.amount > 0
+  AND NOT EXISTS (
+      SELECT 1
+      FROM payment_audit_logs pal
+      WHERE pal.order_id = po.id::text
+        AND pal.action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED')
+  )
+ORDER BY po.completed_at ASC NULLS FIRST, po.id ASC
+LIMIT $3`, OrderStatusCompleted, payment.OrderTypeBalance, limit)
+	if err != nil {
+		return 0, fmt.Errorf("list pending affiliate rebates: %w", err)
+	}
+	orderIDs := make([]int64, 0, limit)
+	for rows.Next() {
+		var orderID int64
+		if err := rows.Scan(&orderID); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		orderIDs = append(orderIDs, orderID)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+
+	reconciled := 0
+	for _, orderID := range orderIDs {
+		order, err := s.entClient.PaymentOrder.Get(ctx, orderID)
+		if err != nil {
+			slog.Warn("failed to load affiliate rebate reconciliation order", "order_id", orderID, "error", err)
+			continue
+		}
+		if err := s.applyAffiliateRebateForOrder(ctx, order); err != nil {
+			slog.Warn("affiliate rebate reconciliation failed", "order_id", orderID, "error", err)
+			continue
+		}
+		reconciled++
+	}
+	return reconciled, nil
 }
 
 func (s *PaymentService) tryClaimAffiliateRebateAudit(ctx context.Context, client *dbent.Client, orderID int64, baseAmount float64) (bool, error) {

@@ -106,6 +106,15 @@ func (s *PaymentOrderExpiryService) runOnce() {
 		slog.Info("[PaymentOrderExpiry] reconciled paid wxpay orders", "count", recovered)
 	}
 
+	affiliateCtx, affiliateCancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
+	reconciledRebates, err := s.paymentSvc.ReconcilePendingAffiliateRebates(affiliateCtx, 100)
+	affiliateCancel()
+	if err != nil {
+		slog.Warn("[PaymentOrderExpiry] failed to reconcile affiliate rebates", "error", err)
+	} else if reconciledRebates > 0 {
+		slog.Info("[PaymentOrderExpiry] reconciled affiliate rebates", "count", reconciledRebates)
+	}
+
 	expireCtx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
 	defer cancel()
 	expired, err := s.paymentSvc.ExpireTimedOutOrders(expireCtx)

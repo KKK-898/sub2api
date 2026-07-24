@@ -373,6 +373,10 @@ export interface SystemSettings {
   // Default settings
   default_balance: number;
   affiliate_rebate_rate: number;
+  affiliate_rebate_tier_0_5: number;
+  affiliate_rebate_tier_6_10: number;
+  affiliate_rebate_tier_11_20: number;
+  affiliate_rebate_tier_21_plus: number;
   affiliate_rebate_freeze_hours: number;
   affiliate_rebate_duration_days: number;
   affiliate_rebate_per_invitee_cap: number;
@@ -640,6 +644,10 @@ export interface UpdateSettingsRequest {
   login_agreement_documents?: LoginAgreementDocument[];
   default_balance?: number;
   affiliate_rebate_rate?: number;
+  affiliate_rebate_tier_0_5?: number;
+  affiliate_rebate_tier_6_10?: number;
+  affiliate_rebate_tier_11_20?: number;
+  affiliate_rebate_tier_21_plus?: number;
   affiliate_rebate_freeze_hours?: number;
   affiliate_rebate_duration_days?: number;
   affiliate_rebate_per_invitee_cap?: number;

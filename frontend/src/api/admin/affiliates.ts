@@ -32,6 +32,7 @@ export interface ListAffiliateRecordsParams {
   sort_by?: string
   sort_order?: 'asc' | 'desc'
   timezone?: string
+  status?: string
 }
 
 export interface AffiliateInviteRecord {
@@ -58,9 +59,26 @@ export interface AffiliateRebateRecord {
   order_amount: number
   pay_amount: number
   rebate_amount: number
+  rebate_rate_percent?: number | null
+  active_invitee_count?: number | null
   payment_type: string
   order_status: string
   created_at: string
+}
+
+export interface AffiliateWithdrawal {
+  id: number
+  user_id: number
+  user_email: string
+  username: string
+  quota_amount: number
+  cash_rate: number
+  cash_amount: number
+  status: 'pending' | 'completed' | 'cancelled'
+  requested_at: string
+  processed_at?: string | null
+  processed_by?: number | null
+  notes?: string
 }
 
 export interface AffiliateTransferRecord {
@@ -173,6 +191,7 @@ function recordParams(params: ListAffiliateRecordsParams = {}) {
     sort_by: params.sort_by || undefined,
     sort_order: params.sort_order || undefined,
     timezone: params.timezone || undefined,
+    status: params.status || undefined,
   }
 }
 
@@ -206,6 +225,38 @@ export async function listTransferRecords(
   return data
 }
 
+export async function listWithdrawals(
+  params: ListAffiliateRecordsParams = {},
+): Promise<PaginatedResponse<AffiliateWithdrawal>> {
+  const { data } = await apiClient.get<PaginatedResponse<AffiliateWithdrawal>>(
+    '/admin/affiliates/withdrawals',
+    { params: recordParams(params) },
+  )
+  return data
+}
+
+export async function completeWithdrawal(
+  withdrawalId: number,
+  notes = '',
+): Promise<AffiliateWithdrawal> {
+  const { data } = await apiClient.post<AffiliateWithdrawal>(
+    `/admin/affiliates/withdrawals/${withdrawalId}/complete`,
+    { notes },
+  )
+  return data
+}
+
+export async function cancelWithdrawal(
+  withdrawalId: number,
+  notes = '',
+): Promise<AffiliateWithdrawal> {
+  const { data } = await apiClient.post<AffiliateWithdrawal>(
+    `/admin/affiliates/withdrawals/${withdrawalId}/cancel`,
+    { notes },
+  )
+  return data
+}
+
 export async function getUserOverview(
   userId: number,
 ): Promise<AffiliateUserOverview> {
@@ -224,6 +275,9 @@ export const affiliatesAPI = {
   listInviteRecords,
   listRebateRecords,
   listTransferRecords,
+  listWithdrawals,
+  completeWithdrawal,
+  cancelWithdrawal,
   getUserOverview,
 }
 

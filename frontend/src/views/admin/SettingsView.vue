@@ -5582,22 +5582,32 @@
             <div v-if="form.affiliate_enabled" class="space-y-6">
               <div>
                 <label class="input-label">
-                  {{ t('admin.settings.features.affiliate.rebateRate') }}
+                  {{ t('admin.settings.features.affiliate.rebateTiers') }}
                 </label>
-                <div class="relative">
-                  <input
-                    v-model.number="form.affiliate_rebate_rate"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    class="input pr-8"
-                    placeholder="20"
-                  />
-                  <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <label
+                    v-for="tier in affiliateRebateTierFields"
+                    :key="tier.key"
+                    class="block rounded-lg border border-gray-200 p-3 dark:border-dark-700"
+                  >
+                    <span class="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ tier.label }}
+                    </span>
+                    <div class="relative">
+                      <input
+                        v-model.number="form[tier.key]"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        class="input pr-8"
+                      />
+                      <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+                    </div>
+                  </label>
                 </div>
                 <p class="mt-1 text-xs text-gray-400">
-                  {{ t('admin.settings.features.affiliate.rebateRateHint') }}
+                  {{ t('admin.settings.features.affiliate.rebateTiersHint') }}
                 </p>
               </div>
 
@@ -7639,6 +7649,22 @@ type SettingsForm = Omit<
   default_platform_quotas: DefaultPlatformQuotasMap;
 };
 
+type AffiliateRebateTierFieldKey =
+  | "affiliate_rebate_tier_0_5"
+  | "affiliate_rebate_tier_6_10"
+  | "affiliate_rebate_tier_11_20"
+  | "affiliate_rebate_tier_21_plus";
+
+const affiliateRebateTierFields: Array<{
+  key: AffiliateRebateTierFieldKey;
+  label: string;
+}> = [
+  { key: "affiliate_rebate_tier_0_5", label: "有效邀请 0-5 人" },
+  { key: "affiliate_rebate_tier_6_10", label: "有效邀请 6-10 人" },
+  { key: "affiliate_rebate_tier_11_20", label: "有效邀请 11-20 人" },
+  { key: "affiliate_rebate_tier_21_plus", label: "有效邀请 21 人及以上" },
+];
+
 const form = reactive<SettingsForm>({
   registration_enabled: true,
   email_verify_enabled: false,
@@ -7655,6 +7681,10 @@ const form = reactive<SettingsForm>({
   default_balance: 0,
   default_platform_quotas: normalizePlatformQuotasMap() as DefaultPlatformQuotasMap,
   affiliate_rebate_rate: 20,
+  affiliate_rebate_tier_0_5: 5,
+  affiliate_rebate_tier_6_10: 10,
+  affiliate_rebate_tier_11_20: 15,
+  affiliate_rebate_tier_21_plus: 20,
   affiliate_rebate_freeze_hours: 0,
   affiliate_rebate_duration_days: 0,
   affiliate_rebate_per_invitee_cap: 0,
@@ -8821,6 +8851,10 @@ async function saveSettings() {
         100,
         Math.max(0, Number(form.affiliate_rebate_rate) || 0),
       ),
+      affiliate_rebate_tier_0_5: Math.min(100, Math.max(0, Number(form.affiliate_rebate_tier_0_5) || 0)),
+      affiliate_rebate_tier_6_10: Math.min(100, Math.max(0, Number(form.affiliate_rebate_tier_6_10) || 0)),
+      affiliate_rebate_tier_11_20: Math.min(100, Math.max(0, Number(form.affiliate_rebate_tier_11_20) || 0)),
+      affiliate_rebate_tier_21_plus: Math.min(100, Math.max(0, Number(form.affiliate_rebate_tier_21_plus) || 0)),
       affiliate_rebate_freeze_hours: Math.max(0, Math.min(720, Number(form.affiliate_rebate_freeze_hours) || 0)),
       affiliate_rebate_duration_days: Math.max(0, Math.min(3650, Math.floor(Number(form.affiliate_rebate_duration_days) || 0))),
       affiliate_rebate_per_invitee_cap: Math.max(0, Number(form.affiliate_rebate_per_invitee_cap) || 0),

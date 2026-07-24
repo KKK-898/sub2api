@@ -145,6 +145,10 @@ type SystemSettings struct {
 	DefaultConcurrency           int                          `json:"default_concurrency"`
 	DefaultBalance               float64                      `json:"default_balance"`
 	AffiliateRebateRate          float64                      `json:"affiliate_rebate_rate"`
+	AffiliateRebateTier0To5      float64                      `json:"affiliate_rebate_tier_0_5"`
+	AffiliateRebateTier6To10     float64                      `json:"affiliate_rebate_tier_6_10"`
+	AffiliateRebateTier11To20    float64                      `json:"affiliate_rebate_tier_11_20"`
+	AffiliateRebateTier21Plus    float64                      `json:"affiliate_rebate_tier_21_plus"`
 	AffiliateRebateFreezeHours   int                          `json:"affiliate_rebate_freeze_hours"`
 	AffiliateRebateDurationDays  int                          `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`

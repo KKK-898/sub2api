@@ -7,6 +7,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -238,6 +239,64 @@ func (h *AffiliateHandler) ListTransferRecords(c *gin.Context) {
 		return
 	}
 	response.Paginated(c, items, total, filter.Page, filter.PageSize)
+}
+
+func (h *AffiliateHandler) ListWithdrawals(c *gin.Context) {
+	page, pageSize := response.ParsePagination(c)
+	items, total, err := h.affiliateService.AdminListWithdrawals(c.Request.Context(), service.AffiliateWithdrawalFilter{
+		Search:   c.Query("search"),
+		Status:   c.Query("status"),
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, items, total, page, pageSize)
+}
+
+type ProcessAffiliateWithdrawalRequest struct {
+	Notes string `json:"notes"`
+}
+
+func (h *AffiliateHandler) CompleteWithdrawal(c *gin.Context) {
+	h.processWithdrawal(c, true)
+}
+
+func (h *AffiliateHandler) CancelWithdrawal(c *gin.Context) {
+	h.processWithdrawal(c, false)
+}
+
+func (h *AffiliateHandler) processWithdrawal(c *gin.Context, complete bool) {
+	withdrawalID, err := strconv.ParseInt(c.Param("withdrawal_id"), 10, 64)
+	if err != nil || withdrawalID <= 0 {
+		response.BadRequest(c, "Invalid withdrawal_id")
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "Admin not authenticated")
+		return
+	}
+	var req ProcessAffiliateWithdrawalRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "Invalid request: "+err.Error())
+			return
+		}
+	}
+	var withdrawal *service.AffiliateWithdrawal
+	if complete {
+		withdrawal, err = h.affiliateService.AdminCompleteWithdrawal(c.Request.Context(), withdrawalID, subject.UserID, req.Notes)
+	} else {
+		withdrawal, err = h.affiliateService.AdminCancelWithdrawal(c.Request.Context(), withdrawalID, subject.UserID, req.Notes)
+	}
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, withdrawal)
 }
 
 func parseAffiliateRecordFilter(c *gin.Context, page, pageSize int) service.AffiliateRecordFilter {

@@ -384,6 +384,7 @@ export default {
     affiliateInviteRecords: 'Invite Records',
     affiliateRebateRecords: 'Rebate Records',
     affiliateTransferRecords: 'Transfer Records',
+    affiliateWithdrawals: 'Cash Withdrawals',
     profile: 'Profile',
     users: 'Users',
     groups: 'Groups',
@@ -1773,6 +1774,7 @@ export default {
       invitesDescription: 'View site-wide inviter and invitee relationships',
       rebatesDescription: 'View recharge orders that generated affiliate rebates',
       transfersDescription: 'View affiliate quota transfers into account balance',
+      withdrawalsDescription: 'Review affiliate reward cash withdrawal requests',
       errors: {
         loadFailed: 'Failed to load affiliate records'
       },
@@ -5471,6 +5473,8 @@ export default {
           enabledHint: 'When off, the affiliate menu is hidden, the aff parameter is ignored at signup, and new recharges generate no rebate. Existing rebate balances can still be transferred.',
           rebateRate: 'Global Rebate Rate',
           rebateRateHint: 'Default percentage given back to the inviter on recharges (0-100, e.g. 10 = 10%).',
+          rebateTiers: 'Tiered Rebate Rates',
+          rebateTiersHint: 'The current active invitee count selects the rate. Changes apply only to newly accrued rebates.',
           freezeHours: 'Rebate Freeze Period (hours)',
           freezeHoursDesc: 'New rebates will be frozen for this period before becoming available for withdrawal. 0 = no freeze.',
           durationDays: 'Rebate Duration (days)',
