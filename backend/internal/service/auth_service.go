@@ -220,12 +220,32 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Status:       StatusActive,
 	}
 
-	if err := s.userRepo.Create(ctx, user); err != nil {
+	var inviterID *int64
+	if code := strings.TrimSpace(affiliateCode); code != "" && s.affiliateService != nil && s.affiliateService.IsEnabled(ctx) {
+		inviter, err := s.affiliateService.ResolveInviterByCode(ctx, code)
+		if err != nil {
+			return "", nil, err
+		}
+		inviterID = &inviter.UserID
+	}
+
+	var createErr error
+	if inviterID != nil {
+		affiliateRepo, ok := s.userRepo.(AffiliateRegistrationUserRepository)
+		if !ok {
+			logger.LegacyPrintf("service.auth", "[Auth] User repository does not support atomic affiliate registration")
+			return "", nil, ErrServiceUnavailable
+		}
+		createErr = affiliateRepo.CreateWithAffiliateInviter(ctx, user, *inviterID)
+	} else {
+		createErr = s.userRepo.Create(ctx, user)
+	}
+	if createErr != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
-		if errors.Is(err, ErrEmailExists) {
+		if errors.Is(createErr, ErrEmailExists) {
 			return "", nil, ErrEmailExists
 		}
-		logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
+		logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", createErr)
 		return "", nil, ErrServiceUnavailable
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
@@ -233,13 +253,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	// snapshot user × platform quota（fail-open）
 	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
 	if s.affiliateService != nil {
-		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for user %d: %v", user.ID, err)
-		}
-		if code := strings.TrimSpace(affiliateCode); code != "" {
-			if err := s.affiliateService.BindInviterByCode(ctx, user.ID, code); err != nil {
-				// 邀请返利码绑定失败不影响注册，只记录日志
-				logger.LegacyPrintf("service.auth", "[Auth] Failed to bind affiliate inviter for user %d: %v", user.ID, err)
+		if inviterID == nil {
+			if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for user %d: %v", user.ID, err)
 			}
 		}
 	}

@@ -211,6 +211,27 @@ func (h *UserHandler) GetAffiliate(c *gin.Context) {
 	response.Success(c, detail)
 }
 
+// CreateAffiliateShareToken returns a signed, non-editable invitation token
+// for the current user.
+// POST /api/v1/user/aff/share-token
+func (h *UserHandler) CreateAffiliateShareToken(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	result, err := h.authService.IssueAffiliateInviteToken(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"token":      result.Token,
+		"expires_at": result.ExpiresAt,
+	})
+}
+
 // TransferAffiliateQuota transfers all available affiliate quota into current balance.
 // POST /api/v1/user/aff/transfer
 func (h *UserHandler) TransferAffiliateQuota(c *gin.Context) {

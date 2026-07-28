@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,8 +69,12 @@ func (r *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(_ context.Cont
 	}
 }
 
-func (r *paymentFulfillmentAffiliateRepoStub) GetAffiliateByCode(context.Context, string) (*AffiliateSummary, error) {
-	panic("unexpected GetAffiliateByCode call")
+func (r *paymentFulfillmentAffiliateRepoStub) GetAffiliateByCode(_ context.Context, code string) (*AffiliateSummary, error) {
+	if r.inviterSummary != nil && strings.EqualFold(strings.TrimSpace(r.inviterSummary.AffCode), strings.TrimSpace(code)) {
+		cp := *r.inviterSummary
+		return &cp, nil
+	}
+	return nil, ErrAffiliateProfileNotFound
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) BindInviter(context.Context, int64, int64) (bool, error) {

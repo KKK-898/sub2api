@@ -122,6 +122,14 @@ type UserRepository interface {
 	DisableTotp(ctx context.Context, userID int64) error
 }
 
+// AffiliateRegistrationUserRepository is implemented by repositories that can
+// create a user and persist the inviter relationship in one database
+// transaction. AuthService uses this optional capability for referral
+// registrations so an account can never be created without its promised bind.
+type AffiliateRegistrationUserRepository interface {
+	CreateWithAffiliateInviter(ctx context.Context, user *User, inviterID int64) error
+}
+
 // RedeemUserAdjustmentRepository provides the atomic, floor-at-zero updates
 // used by negative-value redeem codes. It is intentionally narrower than
 // UserRepository because normal usage billing is allowed to overdraw.

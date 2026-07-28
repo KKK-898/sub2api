@@ -114,6 +114,53 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 	return bound, nil
 }
 
+func createAffiliateBindingForNewUser(ctx context.Context, client affiliateQueryExecer, userID, inviterID int64) error {
+	if userID <= 0 || inviterID <= 0 || userID == inviterID {
+		return service.ErrAffiliateCodeInvalid
+	}
+	if _, err := ensureUserAffiliateWithClient(ctx, client, inviterID); err != nil {
+		return err
+	}
+
+	inserted := false
+	for i := 0; i < affiliateCodeMaxAttempts; i++ {
+		code, err := generateAffiliateCode()
+		if err != nil {
+			return err
+		}
+		_, err = client.ExecContext(ctx, `
+INSERT INTO user_affiliates (user_id, aff_code, inviter_id, created_at, updated_at)
+VALUES ($1, $2, $3, NOW(), NOW())`, userID, code, inviterID)
+		if err == nil {
+			inserted = true
+			break
+		}
+		if isAffiliateUniqueViolation(err) {
+			continue
+		}
+		return fmt.Errorf("create affiliate binding: %w", err)
+	}
+	if !inserted {
+		return fmt.Errorf("create affiliate binding: exhausted affiliate code attempts")
+	}
+
+	res, err := client.ExecContext(ctx,
+		"UPDATE user_affiliates SET aff_count = aff_count + 1, updated_at = NOW() WHERE user_id = $1",
+		inviterID,
+	)
+	if err != nil {
+		return fmt.Errorf("increment inviter aff_count: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read inviter update result: %w", err)
+	}
+	if affected != 1 {
+		return service.ErrAffiliateCodeInvalid
+	}
+	return nil
+}
+
 func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
 	if amount <= 0 {
 		return false, nil

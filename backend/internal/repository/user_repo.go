@@ -43,6 +43,17 @@ func newUserRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *userRepos
 }
 
 func (r *userRepository) Create(ctx context.Context, userIn *service.User) error {
+	return r.create(ctx, userIn, nil)
+}
+
+func (r *userRepository) CreateWithAffiliateInviter(ctx context.Context, userIn *service.User, inviterID int64) error {
+	if inviterID <= 0 {
+		return service.ErrAffiliateCodeInvalid
+	}
+	return r.create(ctx, userIn, &inviterID)
+}
+
+func (r *userRepository) create(ctx context.Context, userIn *service.User, inviterID *int64) error {
 	if userIn == nil {
 		return nil
 	}
@@ -107,6 +118,11 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 	}
 	if err := ensureEmailAuthIdentityWithClient(txCtx, txClient, created.ID, created.Email, "user_repo_create"); err != nil {
 		return err
+	}
+	if inviterID != nil {
+		if err := createAffiliateBindingForNewUser(txCtx, txClient, created.ID, *inviterID); err != nil {
+			return err
+		}
 	}
 
 	if tx != nil {
